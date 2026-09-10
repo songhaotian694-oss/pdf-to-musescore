@@ -1,0 +1,6 @@
+interface:
+  display_name: "PDF 转 MuseScore"
+  short_description: "将印刷五线谱 PDF 识别为可编辑 MuseScore 并生成校对报告"
+  default_prompt: "使用 $pdf-to-musescore 将我提供的 PDF 乐谱转换为可编辑 MSCZ，保留 MusicXML 并生成校对 PDF。"
+policy:
+  allow_implicit_invocation: true

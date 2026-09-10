@@ -1,0 +1,12 @@
+config.local.json
+__pycache__/
+*.py[cod]
+.venv/
+outputs/
+build/
+*.log
+*.mscz
+*.mxl
+*.mid
+*.omr
+*.pdf

@@ -1,0 +1,41 @@
+---
+name: pdf-to-musescore
+description: Convert printed sheet-music PDFs into editable MuseScore scores using Audiveris OMR and MuseScore Studio. Use when the user asks to recognize, transcribe, import, or convert a PDF score into MSCZ, MusicXML, MIDI, or an editable MuseScore project.
+---
+
+# PDF 乐谱转 MuseScore
+
+处理用户提供或授权访问的清晰印刷五线谱。先确认页面属于哪份乐谱，再识谱；一个 PDF 或一个 MXL 不等于一份连续乐谱。文件能打开不等于内容可用，不宣称已测得音符准确率。
+
+## 转换前：全页核对与选组
+
+1. 运行 `scripts/detect-dependencies.ps1` 检查 Audiveris、MuseScore、Poppler 和可写目录。Python 另需 `pypdf`、`pypdfium2`、`numpy`、`Pillow`，配置到 `config.local.json` 的 `Python`。安装前说明官方来源、位置和大小，不重复安装，不修改系统 PATH。
+2. 首次运行 `scripts/convert-score.ps1 -InputPdf <绝对路径> -OutputDirectory <绝对父目录>`，生成 `preflight.json` 和全部源页缩略图，返回退出码 2 / `needs_selection`。**此时未运行 OMR**。
+3. 检查**每一页**缩略图：系统与谱表、标题／乐器、谱号、小节编号是否重新开始、页眉页脚和歌词位置。自动分组只是草案；扫描 PDF 可能没有文本，谱表启发式也可能不准，必须视觉复核。
+4. 用户已指定总谱、分谱或页码时按既有选择继续；单份明确连续乐谱可自行核对后继续，不必再问。多个独立页组且用户未选范围时，展示页组并询问需要总谱、哪些分谱或全部分别生成。不得串接独立分谱。
+5. 按 [页组计划格式](references/page-selection.md) 写入 JSON：源哈希、已检查的全部页、各组预期声部数／歌词／小节数／允许谱号。记录源谱中可确认的信息，不能根据 OMR 输出反推预期以绕过检查。未知小节数和谱号用 null，披露未执行对应检查。
+
+## 分组转换
+
+运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。`-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
+
+脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
+
+CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](references/musescore-cli.md)、[排查指南](references/troubleshooting.md)。多个 MXL 仍返回 `needs_selection`，列出全部候选，不默默取第一个。
+
+## 验证和交付
+
+排版默认使用 `-LayoutMode reflow`：仅清理导入副本的硬换行、硬分页，让 MuseScore 自动排版，保留乐章分隔。用户需要保留源断点时用 `-LayoutMode source`。规则与校对要点见 [换行和分页](references/layout.md)，不把减少页数当成质量目标。
+
+导入后必须执行 [播放音色设置和 MIDI 核验](references/playback.md)。弦乐四重奏按源谱顺序设置 Violin、Violin、Viola、Cello，原始 MIDI 程序号为 40、40、41、42（GM 从 1 起显示为 41、41、42、43）。在页组计划中明确 `playbackInstruments`，不要把谱表名称当成音色已正确的证据。
+
+- `technicalValidation`：文件非空、新生成、MXL/XML 有效、MSCZ 再次读取、PDF 页数、可选 MIDI 头部。
+- `contentValidation`：按源谱计划逐声部检查小节数、声部数、允许谱号和歌词；渲染**全部校对页**，检查近乎空白页和缺少五线谱。严重问题返回退出码 3 / `failed_content_validation`，留下的文件是诊断结果，不是验收通过。
+- `playbackValidation`：设置导入后的乐器 ID、通道程序号与工程音源，再让 MuseScore 重新保存 MSCZ；从最终 MSCZ 新导出 MIDI，逐个发声音符核验实际程序号、bank 和声部通道。无论是否请求交付 MIDI 都执行；音色错误返回退出码 4 / `failed_playback_validation`。
+- `layoutValidation`：核验重新保存后的断点是否符合选定排版策略，失败返回退出码 5 / `failed_layout_validation`。这不代替全部校对页的视觉检查。
+- `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号及歌词。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
+- 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
+- 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。
+- 只有技术、已配置结构与播放音色检查全部通过，才报告 `completed_needs_manual_review`，不用无条件的 `completed`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
+
+交付各组的 `score.mscz`、`score-proof.pdf`、可选 MIDI、MusicXML 和报告，注明对应源页。测试见 [tests/README.md](tests/README.md)。卸载只删除安装的 Skill 目录，不删除乐谱，也不卸载 Audiveris 或 MuseScore。
