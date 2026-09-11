@@ -18,6 +18,9 @@ CATALOG = {
     'viola': ('viola', 'strings.viola', 'Viola', 41),
     'cello': ('violoncello', 'strings.cello', 'Cello', 42),
     'piano': ('piano', 'keyboard.piano', 'Piano', 0),
+    'trombone': ('trombone', 'brass.trombone', 'Trombone', 57),
+    'baritone-horn': ('baritone-horn', 'brass.baritone-horn', 'Baritone Horn', 60),
+    'euphonium': ('euphonium', 'brass.euphonium', 'Euphonium', 58),
 }
 
 
@@ -42,6 +45,12 @@ def infer(label):
         return 'cello'
     if normalized in ['piano','pno.','钢琴']:
         return 'piano'
+    if re.fullmatch(r'(trombone|tenor trombone|tbn\.?|长号)(\s*(i{1,3}|[123一二三]))?', normalized):
+        return 'trombone'
+    if re.fullmatch(r'(baritone horn|baritone-horn|次中音号)(\s*(i{1,3}|[123一二三]))?', normalized):
+        return 'baritone-horn'
+    if re.fullmatch(r'(euphonium|euph\.?|上低音号)(\s*(i{1,3}|[123一二三]))?', normalized):
+        return 'euphonium'
     return None
 
 
@@ -65,7 +74,7 @@ def instruments(root, selection):
         kind = requested[i].lower() if requested is not None else infer(label)
         if kind == 'violoncello': kind = 'cello'
         if kind not in CATALOG:
-            raise ValueError(f'Playback instrument is unknown for part {i+1} ({label}). Set reviewed playbackInstruments: violin, viola, cello or piano. Do not guess from part count/clef.')
+            raise ValueError(f'Playback instrument is unknown for part {i+1} ({label}). Set reviewed playbackInstruments from {list(CATALOG)}. Do not guess from part count/clef.')
         if len(part.findall('Instrument')) != 1:
             raise ValueError('Expected one initial instrument per part.')
         inst_id, sound_id, name, program = CATALOG[kind]
@@ -93,7 +102,7 @@ def apply(source, output, selection):
             channel_name = channel.get('name', '')
             if i == 0 or channel_name in ['', 'normal', 'arco']:
                 program = item['program0']
-            elif item['instrument'] != 'piano' and channel_name in ['pizzicato','tremolo']:
+            elif item['instrument'] in ['violin','viola','cello'] and channel_name in ['pizzicato','tremolo']:
                 program = {'pizzicato':45, 'tremolo':44}[channel_name]
             else:
                 raise ValueError(f'Unmapped articulation channel: {channel_name}')
@@ -188,7 +197,7 @@ def read_midi(path):
         elif kind==11 and values[0] in [0,32]:
             state['bankMSB' if values[0]==0 else 'bankLSB']=values[1]
         elif kind==9 and values[1]>0:
-            tracks[tr]['notes'].append({'tick':tick,'channel':ch,'program0':state['program'],
+            tracks[tr]['notes'].append({'tick':tick,'pitch':values[0],'channel':ch,'program0':state['program'],
                                         'bankMSB':state['bankMSB'],'bankLSB':state['bankLSB']})
     return tracks
 

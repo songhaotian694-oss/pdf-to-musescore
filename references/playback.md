@@ -4,7 +4,7 @@
 
 在已核对的页组计划 `groups` 项中加入 `"playbackInstruments": ["violin", "violin", "viola", "cello"]`，按源谱声部顺序填写。单独大提琴分谱填 `["cello"]`，钢琴填 `["piano"]`（一个声部可有两个谱表）。只能根据源谱确定预期。
 
-未显式填写时，仅对明确的 Violin I/II、Viola、Cello/Violoncello、Piano 等名称推断；无法识别时退出 4，要求补充映射。不得仅因有四个声部就当作弦乐四重奏。目前自动映射支持 violin、viola、cello、piano，其他乐器需扩展映射后验证。
+未显式填写时，仅对明确的 Violin I/II、Viola、Cello/Violoncello、Piano 等名称推断；无法识别时退出 4，要求补充映射。不得仅因有四个声部就当作弦乐四重奏。目前自动映射支持 violin、viola、cello、piano、trombone、baritone-horn、euphonium，其他乐器需扩展映射后验证。
 
 | 乐器 | MIDI 原始程序号（0 起） | GM 显示编号（1 起） |
 |---|---:|---:|
@@ -12,6 +12,15 @@
 | Viola | 41 | 42 |
 | Cello | 42 | 43 |
 | Piano | 0 | 1 |
+| Trombone / 长号 | 57 | 58 |
+| Baritone Horn / 次中音号 | 60 | 61 |
+| Euphonium / 上低音号 | 58 | 59 |
+
+铜管：`playbackInstruments` 可填写 `["trombone","baritone-horn"]`；若源谱实际标为 Euphonium，填 `euphonium`，不能与 Baritone Horn 混用。中文“次中音号”默认对应 Baritone Horn；俗称或单独的 Baritone 有歧义时依据源谱确认。支持明确的中英文名及 I/II/III 编号；不将 Baritone Saxophone 当作铜管。
+
+上述编号采用 MuseScore 4.7.3 的乐器定义。GM 没有独立 Baritone Horn / Euphonium 程序：MuseScore Basic 使用程序 60（French Horn）／58（Tuba）作为基础播放映射，保留各自乐器 ID，并不等于安装了专用采样音色。来源：[MuseScore 乐器定义](https://github.com/musescore/MuseScore/blob/v4.7.3/share/instruments/instruments.xml)。
+
+音色修复保留原谱移调、谱号和音符，不按乐器名自行改调。高音谱号降 B 记谱与低音谱号实音记谱须按源谱核对；源 MusicXML 若已经漏掉移调，单独修复音色无法补回。铜管弱音器等额外通道暂需专项验证，不套用弦乐拨弦／震音映射。
 
 ## 强制流程
 

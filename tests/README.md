@@ -21,8 +21,10 @@
 另执行 skill-creator 的 `quick_validate.py` 和 PowerShell 语法检查。安装后需要在下一次对话确认 `$pdf-to-musescore` 出现在可用技能中；元数据校验不能替代真正的新回合发现测试。
 # Playback regression
 
+Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite now has 18 cases; the full unit total is 34. MIDI note pitches/ticks must remain unchanged after instrument assignment.
+
 Layout: run `python tests/test-layout.py` to verify physical break removal, section/nobreak preservation, source mode, no overwrite and rejection of reintroduced breaks. Real MuseScore tests must resave both reflow and source modes, check `layoutValidation`, and inspect every proof page; fewer pages alone is not success.
 
-Run `python tests/test-playback.py`: 15 independent SMF/MSCZ cases cover quartet programs, default piano, swapped instruments, missing or late program changes, bank, percussion/shared channels, track order, running status, original preservation, unknown names, overwrite refusal, two-staff piano and truncated MIDI. Use the configured Python executable and absolute script path.
+Run `python tests/test-playback.py`: 18 independent SMF/MSCZ cases cover quartet programs, trombone/baritone-horn/euphonium programs and transposition preservation, default piano, swapped instruments, missing or late program changes, bank, percussion/shared channels, track order, running status, original preservation, unknown names, overwrite refusal, two-staff piano and truncated MIDI. Use the configured Python executable and absolute script path.
 
 Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet expects raw programs 40/40/41/42; a single cello expects 42. Test without `-ExportMidi` too: verification must still generate a MIDI. Original generic melody regression fixtures explicitly request piano; they do not imply every unknown source instrument is piano.

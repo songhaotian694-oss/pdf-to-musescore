@@ -83,5 +83,30 @@ class PlaybackTests(unittest.TestCase):
     def test_truncated_midi(self):
         midi(self.mid);self.mid.write_bytes(self.mid.read_bytes()[:-2])
         with self.assertRaises(ValueError):p.read_midi(self.mid)
+    def test_brass_programs_and_piano_fallback(self):
+        names=['Trombone','Baritone Horn','Euphonium']
+        source=self.d/'brass.mscz';score(source,names)
+        out=self.d/'brass-fixed.mscz';sel={'group':{'playbackInstruments':['trombone','baritone-horn','euphonium']}}
+        p.apply(source,out,sel);midi(self.mid,[57,60,58],names)
+        self.assertEqual(p.verify(out,self.mid,sel)['status'],'passed')
+        midi(self.mid,[0,0,0],names)
+        self.assertEqual(p.verify(out,self.mid,sel)['status'],'failed_playback_validation')
+    def test_brass_names_are_distinct(self):
+        for label,kind in [('长号 II','trombone'),('次中音号','baritone-horn'),('Baritone Horn','baritone-horn'),('Euph.','euphonium'),('上低音号','euphonium')]:
+            self.assertEqual(p.infer(label),kind)
+        self.assertIsNone(p.infer('Baritone Saxophone'))
+        self.assertIsNone(p.infer('Baritone'))
+    def test_brass_transposition_preserved(self):
+        root=p.load_score(self.original)[1]
+        inst=root.find('./Score/Part/Instrument')
+        ET.SubElement(inst,'transposeChromatic').text='-14'
+        ET.SubElement(inst,'transposeDiatonic').text='-8'
+        source=self.d/'transposed.mscz'
+        with zipfile.ZipFile(source,'w') as z:z.writestr('score.mscx',ET.tostring(root))
+        out=self.d/'transposed-fixed.mscz'
+        p.apply(source,out,{'group':{'playbackInstruments':['baritone-horn','trombone','euphonium','cello']}})
+        result=p.load_score(out)[1].find('./Score/Part/Instrument')
+        self.assertEqual(result.findtext('transposeChromatic'),'-14')
+        self.assertEqual(result.findtext('transposeDiatonic'),'-8')
 
 if __name__=='__main__':unittest.main(verbosity=2)

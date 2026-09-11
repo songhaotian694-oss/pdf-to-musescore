@@ -21,7 +21,7 @@
 
 ## 边界
 
-通过自动检查不等于音符准确或排版完善，仍需逐页核对和试听。当前播放映射支持 violin、viola、cello、piano；复杂换乐器、拨弦等需要进一步验证。详见 [播放](references/playback.md)、[布局](references/layout.md) 和 [人工清单](references/correction-checklist.md)。
+通过自动检查不等于音符准确或排版完善，仍需逐页核对和试听。当前播放映射支持 violin、viola、cello、piano、trombone、baritone-horn、euphonium；复杂换乐器、拨弦、铜管弱音器等需要进一步验证。详见 [播放](references/playback.md)、[布局](references/layout.md) 和 [人工清单](references/correction-checklist.md)。
 
 ## 测试
 
@@ -33,4 +33,4 @@ python tests/test-playback.py
 python tests/test-layout.py
 ```
 
-当前共 31 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。
+当前共 34 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。

@@ -25,6 +25,8 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 
 ## 验证和交付
 
+铜管已支持长号 `trombone`、次中音号 `baritone-horn`，并分别支持源谱标为 Euphonium 的 `euphonium`。按 [播放说明](references/playback.md) 区分乐器及记谱移调；修复音色不会自动移调音符。
+
 排版默认使用 `-LayoutMode reflow`：仅清理导入副本的硬换行、硬分页，让 MuseScore 自动排版，保留乐章分隔。用户需要保留源断点时用 `-LayoutMode source`。规则与校对要点见 [换行和分页](references/layout.md)，不把减少页数当成质量目标。
 
 导入后必须执行 [播放音色设置和 MIDI 核验](references/playback.md)。弦乐四重奏按源谱顺序设置 Violin、Violin、Viola、Cello，原始 MIDI 程序号为 40、40、41、42（GM 从 1 起显示为 41、41、42、43）。在页组计划中明确 `playbackInstruments`，不要把谱表名称当成音色已正确的证据。
