@@ -12,7 +12,7 @@ spec=importlib.util.spec_from_file_location('playback',Path(__file__).parents[1]
 p=importlib.util.module_from_spec(spec);spec.loader.exec_module(p)
 NAMES=['Violin I','Violin II','Viola','Violoncello']
 
-def score(path, names=NAMES, staves=1):
+def score(path, names=NAMES, staves=1, silent=()):
     root=ET.Element('museScore');s=ET.SubElement(root,'Score')
     for i,name in enumerate(names):
         part=ET.SubElement(s,'Part',id=str(i+1));ET.SubElement(part,'trackName').text=name
@@ -20,7 +20,12 @@ def score(path, names=NAMES, staves=1):
         inst=ET.SubElement(part,'Instrument',id='piano')
         ET.SubElement(inst,'instrumentId').text='keyboard.piano'
         ch=ET.SubElement(inst,'Channel');ET.SubElement(ch,'program',value='0')
-        staff=ET.SubElement(s,'Staff',id=str(i+1));ET.SubElement(staff,'Measure',number='1')
+        for j in range(staves):
+            staff_id=str(i*staves+j+1)
+            staff=ET.SubElement(s,'Staff',id=staff_id);measure=ET.SubElement(staff,'Measure',number='1')
+            voice=ET.SubElement(measure,'voice')
+            if staff_id in silent:ET.SubElement(voice,'Rest')
+            else:ET.SubElement(ET.SubElement(voice,'Chord'),'Note')
     with zipfile.ZipFile(path,'w') as z:
         z.writestr('score.mscx',ET.tostring(root))
         z.writestr('audiosettings.json',json.dumps({'activeSoundProfile':'Muse Sounds','tracks':[{'old':'piano'}]}))
@@ -83,6 +88,35 @@ class PlaybackTests(unittest.TestCase):
     def test_truncated_midi(self):
         midi(self.mid);self.mid.write_bytes(self.mid.read_bytes()[:-2])
         with self.assertRaises(ValueError):p.read_midi(self.mid)
+    def test_silent_middle_part_does_not_shift_track_mapping(self):
+        source=self.d/'rests.mscz';score(source,silent=('2',))
+        out=self.d/'rests-fixed.mscz';p.apply(source,out,self.selection)
+        midi(self.mid,[40,41,42],['Violin I','Viola','Violoncello'])
+        result=p.verify(out,self.mid,self.selection)
+        self.assertEqual(result['errors'],[])
+        self.assertEqual([s['part'] for s in result['silentStaves']],['Violin II'])
+    def test_silent_piano_staff(self):
+        source=self.d/'rests.mscz';score(source,['Piano'],2,silent=('1',))
+        out=self.d/'rests-fixed.mscz';sel={'group':{'playbackInstruments':['piano']}}
+        p.apply(source,out,sel);midi(self.mid,[0],['Piano'])
+        self.assertEqual(p.verify(out,self.mid,sel)['errors'],[])
+    def test_missing_sounding_part_still_fails(self):
+        self.assertTrue(self.verify(programs=[40,40,41],names=NAMES[:3])['errors'])
+    def test_all_rest_score(self):
+        source=self.d/'rests.mscz';score(source,['Piano'],silent=('1',))
+        out=self.d/'rests-fixed.mscz';sel={'group':{'playbackInstruments':['piano']}}
+        p.apply(source,out,sel)
+        data=b'\x00\xff\x2f\x00'
+        self.mid.write_bytes(b'MThd'+struct.pack('>IHHH',6,1,1,480)+b'MTrk'+struct.pack('>I',len(data))+data)
+        self.assertEqual(p.verify(out,self.mid,sel)['errors'],[])
+    def test_missing_staff_is_not_intentional_silence(self):
+        root=p.load_score(self.fixed)[1];s=root.find('Score');s.remove(s.find('Staff'))
+        out=self.d/'missing.mscz'
+        with zipfile.ZipFile(out,'w') as z:
+            z.writestr('score.mscx',ET.tostring(root))
+            z.writestr('audiosettings.json',json.dumps({'activeSoundProfile':'MuseScore Basic','tracks':[]}))
+        midi(self.mid,[40,41,42],NAMES[1:])
+        self.assertTrue(p.verify(out,self.mid,self.selection)['errors'])
     def test_brass_programs_and_piano_fallback(self):
         names=['Trombone','Baritone Horn','Euphonium']
         source=self.d/'brass.mscz';score(source,names)

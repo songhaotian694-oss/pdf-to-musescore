@@ -2,6 +2,8 @@
 
 声部名称、谱号和 Instrument ID 并不足以证明实际播放音色正确。必须在 MuseScore 导入后设置播放通道，并重新保存、导出 MIDI 验证。
 
+全休止声部／谱表可能不导出含 Note On 的 MIDI 轨道。验证以最终 MSCZ 的实际音符／休止确定发声谱表，单独报告 `silentStaves`，不会因中间声部休止而把后续轨道错配。所有声部仍检查已保存的乐器设置；缺少本应发声的轨道仍失败。休止小节数和进入位置另见 [休止检查](rests.md)，音色正确不代表时间轴正确。
+
 在已核对的页组计划 `groups` 项中加入 `"playbackInstruments": ["violin", "violin", "viola", "cello"]`，按源谱声部顺序填写。单独大提琴分谱填 `["cello"]`，钢琴填 `["piano"]`（一个声部可有两个谱表）。只能根据源谱确定预期。
 
 未显式填写时，仅对明确的 Violin I/II、Viola、Cello/Violoncello、Piano 等名称推断；无法识别时退出 4，要求补充映射。不得仅因有四个声部就当作弦乐四重奏。目前自动映射支持 violin、viola、cello、piano、trombone、baritone-horn、euphonium，其他乐器需扩展映射后验证。

@@ -19,6 +19,8 @@
 
 每次创建新输出目录，保留原件及中间结果。输出包括 MSCZ、校对 PDF、可选 MIDI、原始 MusicXML 与验证报告。
 
+含整小节／多小节休止的源谱还需记录源休止区间，核对数量、时值和进入位置，见 [休止检查](references/rests.md)。隐藏休止仍占播放时间；校验器不会无依据补删小节。
+
 ## 边界
 
 通过自动检查不等于音符准确或排版完善，仍需逐页核对和试听。当前播放映射支持 violin、viola、cello、piano、trombone、baritone-horn、euphonium；复杂换乐器、拨弦、铜管弱音器等需要进一步验证。详见 [播放](references/playback.md)、[布局](references/layout.md) 和 [人工清单](references/correction-checklist.md)。
@@ -31,6 +33,7 @@
 python tests/test-structure.py
 python tests/test-playback.py
 python tests/test-layout.py
+python tests/test-rests.py
 ```
 
-当前共 34 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。
+当前共 55 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。

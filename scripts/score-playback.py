@@ -216,12 +216,32 @@ def verify(score, midi, selection):
         audio=json.loads(z.read('audiosettings.json')) if 'audiosettings.json' in z.namelist() else {}
     if audio.get('activeSoundProfile')!='MuseScore Basic' or audio.get('tracks'):
         errors.append('Sound profile or explicit track overrides differ from the validated MuseScore Basic routing.')
+    # MIDI may omit rest-only parts/staves. Determine silence from actual saved
+    # notation, not from missing MIDI events (which could be a failed export).
+    staff_map={s.get('id'):s for s in root.findall('./Score/Staff')}
+    active, silent, staff_ordinal = [], [], 0
+    for part,item in zip(parts,mapping):
+        active_staves = 0
+        for ref in part.findall('Staff'):
+            staff_ordinal += 1
+            staff_id = ref.get('id', str(staff_ordinal))
+            staff = staff_map.get(staff_id)
+            if staff is None or (not staff.findall('.//Note') and not staff.findall('.//Rest')):
+                errors.append(f"{item['label']}, staff {staff_id}: missing notation; cannot classify as intentional silence.")
+                active_staves += 1
+            elif staff.findall('.//Note'):
+                active_staves += 1
+            else:
+                silent.append({'part':item['label'],'staff':staff_id,'instrument':item['instrument'],
+                               'expectedProgram0':item['program0']})
+        if active_staves:
+            active.append(dict(item, activeStaves=active_staves))
     tracks=[t for t in read_midi(midi) if t['notes']]
-    expected=mapping
-    if len(tracks)!=len(mapping):
-        expected=[item for item in mapping for _ in range(item['staves'])]
+    expected=active
+    if len(tracks)!=len(active):
+        expected=[item for item in active for _ in range(item['activeStaves'])]
     if len(tracks)!=len(expected):
-        errors.append(f'Expected {len(mapping)} part tracks or {sum(i["staves"] for i in mapping)} staff tracks with notes; found {len(tracks)}.')
+        errors.append(f'Expected {len(active)} sounding part tracks or {sum(i["activeStaves"] for i in active)} sounding staff tracks; found {len(tracks)}.')
     used={}
     summary=[]
     for track,item in zip(tracks,expected):
@@ -244,8 +264,8 @@ def verify(score, midi, selection):
                         'channels1':[c+1 for c in channels],'programs0':programs,
                         'expectedProgram0':item['program0'],'expectedProgram1':item['program1'],'noteCount':len(track['notes'])})
     return {'status':'failed_playback_validation' if errors else 'passed', 'errors':errors,
-            'profile':'MuseScore Basic','parts':summary,'savedScore':str(score),'midi':str(midi),
-            'scope':'Saved instrument IDs and every MIDI note-on program/bank; not a listening or installed soundfont-quality test.'}
+            'profile':'MuseScore Basic','parts':summary,'silentStaves':silent,'savedScore':str(score),'midi':str(midi),
+            'scope':'Saved instrument IDs for all parts and every sounding MIDI note-on program/bank. Rest-only staves have no note-on timbre to verify; not a listening or installed soundfont-quality test.'}
 
 
 def main():

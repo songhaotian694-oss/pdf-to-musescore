@@ -8,7 +8,7 @@
 
 `run-content-regression.py --run <成功总谱运行目录> --out <全新测试目录> --powershell <pwsh.exe绝对路径>` 在成功结果的副本中注入多余小节、错误大提琴谱号、页脚误歌词和校对空白页，4 项都应返回退出码 3。空白页测试特别要求 `technicalValidation=passed` 与 `failed_content_validation` 同时出现。原运行保持不变；这些是故障注入测试，不是音符准确率测试。
 
-旧 `run-tests.ps1` 已适配 v2：对原创正常夹具生成已知结构计划；普通文字 PDF 改为预检退出 2、不启动 OMR。修正单页 PowerShell 数组序列化后可用 `-TestName` 重跑特定项。大型测试输出不包含在仓库中；请在本机生成原创夹具并运行验证。
+旧 `run-tests.ps1` 已适配 v2：对原创正常夹具生成已知结构计划；普通文字 PDF 改为预检退出 2、不启动 OMR。修正单页 PowerShell 数组序列化后可用 `-TestName` 重跑特定项。详细 v2 证据保存在构建工作区 `D:\app\skill\build-v2`，不随技能复制大型测试输出。
 
 ## 原有夹具和验证
 
@@ -21,10 +21,18 @@
 另执行 skill-creator 的 `quick_validate.py` 和 PowerShell 语法检查。安装后需要在下一次对话确认 `$pdf-to-musescore` 出现在可用技能中；元数据校验不能替代真正的新回合发现测试。
 # Playback regression
 
-Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite now has 18 cases; the full unit total is 34. MIDI note pitches/ticks must remain unchanged after instrument assignment.
+Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; with rest checks the full unit total is 55. MIDI note pitches/ticks must remain unchanged after instrument assignment.
 
 Layout: run `python tests/test-layout.py` to verify physical break removal, section/nobreak preservation, source mode, no overwrite and rejection of reintroduced breaks. Real MuseScore tests must resave both reflow and source modes, check `layoutValidation`, and inspect every proof page; fewer pages alone is not success.
 
-Run `python tests/test-playback.py`: 18 independent SMF/MSCZ cases cover quartet programs, trombone/baritone-horn/euphonium programs and transposition preservation, default piano, swapped instruments, missing or late program changes, bank, percussion/shared channels, track order, running status, original preservation, unknown names, overwrite refusal, two-staff piano and truncated MIDI. Use the configured Python executable and absolute script path.
+Run `python tests/test-playback.py`: 23 independent SMF/MSCZ cases cover silent parts/staves, missing sounding tracks, brass and quartet programs, default piano, swapped instruments, missing or late program changes, bank, percussion/shared channels, track order, running status, original preservation, unknown names, overwrite refusal, two-staff piano and truncated MIDI. Use the configured Python executable and absolute script path.
 
 Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet expects raw programs 40/40/41/42; a single cello expects 42. Test without `-ExportMidi` too: verification must still generate a MIDI. Original generic melody regression fixtures explicitly request piano; they do not imply every unknown source instrument is piano.
+
+## 休止回归
+
+`python tests/test-rests.py` 包含 16 项原创夹具测试：小节漏空、只有 forward／倚音、3/4 与 12/8 整小节休止、拍号和 divisions 继承、加法拍号、整小节休止时值或起点错误、跨谱表 backup、8 小节休止已展开不重复计数、多加隐藏休止、26 小节被压成 4 小节、未展开的多小节休止、未知源预期及错误计划。使用实际序号定位，显示小节号不能绕过检查。
+
+`test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
+
+真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。

@@ -25,6 +25,8 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 
 ## 验证和交付
 
+源谱有整小节／多小节休止时，按 [休止与进入位置](references/rests.md) 从源谱记录 `expectedRestSpansPerPart`，核对休止数量、当前拍号和休止后的进入小节。多小节休止不能压成一个实际小节，已经展开的休止也不能重复添加；不能靠改小节号或隐藏休止修复时长。
+
 铜管已支持长号 `trombone`、次中音号 `baritone-horn`，并分别支持源谱标为 Euphonium 的 `euphonium`。按 [播放说明](references/playback.md) 区分乐器及记谱移调；修复音色不会自动移调音符。
 
 排版默认使用 `-LayoutMode reflow`：仅清理导入副本的硬换行、硬分页，让 MuseScore 自动排版，保留乐章分隔。用户需要保留源断点时用 `-LayoutMode source`。规则与校对要点见 [换行和分页](references/layout.md)，不把减少页数当成质量目标。
@@ -32,10 +34,10 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 导入后必须执行 [播放音色设置和 MIDI 核验](references/playback.md)。弦乐四重奏按源谱顺序设置 Violin、Violin、Viola、Cello，原始 MIDI 程序号为 40、40、41、42（GM 从 1 起显示为 41、41、42、43）。在页组计划中明确 `playbackInstruments`，不要把谱表名称当成音色已正确的证据。
 
 - `technicalValidation`：文件非空、新生成、MXL/XML 有效、MSCZ 再次读取、PDF 页数、可选 MIDI 头部。
-- `contentValidation`：按源谱计划逐声部检查小节数、声部数、允许谱号和歌词；渲染**全部校对页**，检查近乎空白页和缺少五线谱。严重问题返回退出码 3 / `failed_content_validation`，留下的文件是诊断结果，不是验收通过。
+- `contentValidation`：按源谱计划逐声部检查小节数、声部数、允许谱号、歌词及连续整小节休止区间；定位未解决的空小节，检查整小节休止的起点及时值。渲染**全部校对页**，检查近乎空白页和缺少五线谱。严重问题返回退出码 3 / `failed_content_validation`，留下的文件是诊断结果，不是验收通过。
 - `playbackValidation`：设置导入后的乐器 ID、通道程序号与工程音源，再让 MuseScore 重新保存 MSCZ；从最终 MSCZ 新导出 MIDI，逐个发声音符核验实际程序号、bank 和声部通道。无论是否请求交付 MIDI 都执行；音色错误返回退出码 4 / `failed_playback_validation`。
 - `layoutValidation`：核验重新保存后的断点是否符合选定排版策略，失败返回退出码 5 / `failed_layout_validation`。这不代替全部校对页的视觉检查。
-- `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号及歌词。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
+- `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号、歌词及休止区间。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
 - 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
 - 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。
 - 只有技术、已配置结构与播放音色检查全部通过，才报告 `completed_needs_manual_review`，不用无条件的 `completed`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。

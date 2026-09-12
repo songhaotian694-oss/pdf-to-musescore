@@ -9,6 +9,7 @@ import json
 import re
 import sys
 import zipfile
+from fractions import Fraction
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -148,6 +149,7 @@ def validate_plan(plan, pre, requested):
         clefs = group.get('allowedClefsPerPart')
         if clefs is not None and (not isinstance(clefs, list) or len(clefs) != group['expectedParts'] or any(not isinstance(c, list) or not c or any(s not in ['G','F','C','percussion','TAB','none'] for s in c) for c in clefs)):
             raise ValueError('allowedClefsPerPart must list reviewed clef signs for each part, or null.')
+        validate_rest_expectations(group)
     if sorted(covered) != list(range(1, pre['pageCount']+1)):
         raise ValueError('Groups must partition all source pages exactly once; do not omit or duplicate pages.')
     if len(groups) > 1 and plan.get('selectionBasis') != 'user':
@@ -185,6 +187,122 @@ def select(source, pre, plan_path, requested, out):
     return selection
 
 
+def validate_rest_expectations(group):
+    spans = group.get('expectedRestSpansPerPart')
+    if spans is None:
+        return
+    if not isinstance(spans, list) or len(spans) != group['expectedParts']:
+        raise ValueError('expectedRestSpansPerPart needs one list per part, or null when unreviewed.')
+    for part_index, items in enumerate(spans):
+        if not isinstance(items, list):
+            raise ValueError('Each reviewed part needs a list of maximal whole-bar rest spans; [] means none.')
+        previous_end = -1
+        for item in items:
+            if not isinstance(item, dict) or set(item) != {'startMeasure', 'measureCount'}:
+                raise ValueError('Rest spans require startMeasure and measureCount only.')
+            start, count = item['startMeasure'], item['measureCount']
+            if type(start) is not int or type(count) is not int or start < 1 or count < 1:
+                raise ValueError('Rest span positions/counts must be positive integers, counted from the first actual bar.')
+            if start <= previous_end + 1:
+                raise ValueError('Rest spans must be ordered, disjoint and maximal; merge adjacent silent ranges.')
+            previous_end = start + count - 1
+            counts = group.get('expectedMeasuresPerPart')
+            if counts is not None and previous_end > counts[part_index]:
+                raise ValueError('Rest span extends beyond the reviewed part measure count.')
+
+
+def time_quarters(time):
+    if time.find('senza-misura') is not None:
+        return None
+    beats, types = time.findall('beats'), time.findall('beat-type')
+    if not beats or len(beats) != len(types):
+        return None
+    return sum((sum(Fraction(n.strip()) for n in b.text.split('+')) * 4 / Fraction(t.text)
+                for b, t in zip(beats, types)), Fraction(0))
+
+
+def measure_details(part):
+    """Inventory real XML bars; never expand a multiple-rest display twice.
+
+    Use explicit MusicXML durations, inherited divisions/time and a cursor for
+    backup/forward. This checks rest duration, not complete polyphonic rhythm.
+    """
+    result, divisions, meters = [], None, {}
+    for index, measure in enumerate(part.findall('measure'), 1):
+        errors, warnings = [], []
+        cursor = Fraction(0)
+        regular = [n for n in measure.findall('note') if n.find('grace') is None]
+        rests = [n for n in regular if n.find('rest') is not None]
+        rest_only = bool(regular) and len(regular) == len(rests)
+        if not regular:
+            # A forward can legitimately represent an invisible gap; it is not
+            # evidence for a notated rest. Do not manufacture rests from it.
+            errors.append('No timed notes/rests; unresolved empty, forward-only or grace-only measure. Compare source before accepting.')
+        full_rests = []
+        for node in measure:
+            if node.tag == 'attributes':
+                if node.find('divisions') is not None:
+                    divisions = Fraction(node.findtext('divisions'))
+                    if divisions <= 0:
+                        raise ValueError('MusicXML divisions must be positive.')
+                for time in node.findall('time'):
+                    meters[time.get('number', 'all')] = time_quarters(time)
+            if node.tag not in ['note', 'backup', 'forward'] or node.find('grace') is not None:
+                continue
+            raw = node.findtext('duration')
+            if raw is None or Fraction(raw) <= 0:
+                errors.append('Missing or nonpositive timed note/rest/backup/forward duration.')
+                continue
+            if divisions is None:
+                warnings.append('Missing divisions: rest duration was NOT checked.')
+                continue
+            duration = Fraction(raw) / divisions
+            if node.tag == 'backup':
+                cursor -= duration
+                if cursor < 0:
+                    errors.append('Backup moves before measure start.')
+                continue
+            rest = node.find('rest') if node.tag == 'note' else None
+            if rest is not None and rest.get('measure') == 'yes':
+                meter = meters.get(node.findtext('staff', '1'), meters.get('all'))
+                full_rests.append({'durationQuarters': str(duration), 'meterQuarters': str(meter) if meter is not None else None})
+                if cursor != 0:
+                    errors.append(f'Whole-measure rest starts at {cursor} quarter notes instead of measure start; inspect extra rests/forwards.')
+                if measure.get('implicit') == 'yes':
+                    warnings.append('Implicit/pickup measure: full-measure rest duration requires source review.')
+                elif meter is None:
+                    warnings.append('Missing/unmeasured time signature: whole-bar rest duration was NOT checked.')
+                elif duration != meter:
+                    errors.append(f'Whole-measure rest duration/start is {duration}/{cursor} quarter notes; expected {meter}/0.')
+            if node.find('chord') is None:
+                cursor += duration
+        result.append({'index': index, 'number': measure.get('number'), 'restOnly': rest_only,
+                       'timedNotes': len(regular)-len(rests), 'rests': len(rests),
+                       'wholeMeasureRests': full_rests,
+                       'hiddenRests': sum(n.get('print-object') == 'no' for n in rests),
+                       'multipleRestCounts': [int(e.text) for e in measure.findall('./attributes/measure-style/multiple-rest')],
+                       'errors': list(dict.fromkeys(errors)), 'warnings': list(dict.fromkeys(warnings))})
+    # Display spans must be backed by individual silent MusicXML measures.
+    # A compact or corrupt export needs explicit review, never blind expansion.
+    for bar in result:
+        for count in bar['multipleRestCounts']:
+            covered = result[bar['index']-1:bar['index']-1+count]
+            if count < 1 or len(covered) != count or not all(m['restOnly'] for m in covered):
+                bar['errors'].append(f'Multiple-rest display spans {count} bars without matching silent XML measures; review compressed-rest expansion.')
+    return result
+
+
+def rest_spans(bars):
+    spans = []
+    for bar in bars:
+        if bar['restOnly']:
+            if spans and spans[-1]['startMeasure'] + spans[-1]['measureCount'] == bar['index']:
+                spans[-1]['measureCount'] += 1
+            else:
+                spans.append({'startMeasure': bar['index'], 'measureCount': 1})
+    return spans
+
+
 def music_details(path):
     if path.suffix.lower() == '.mxl':
         with zipfile.ZipFile(path) as z:
@@ -206,16 +324,20 @@ def music_details(path):
     names = {p.attrib.get('id'): p.findtext('part-name') for p in root.findall('./part-list/score-part')}
     parts = []
     for p in root.findall('./part'):
+        bars = measure_details(p)
         parts.append({'id': p.attrib.get('id'), 'name': names.get(p.attrib.get('id')),
                       'measures': len(p.findall('./measure')),
                       'measureNumbers': [m.attrib.get('number') for m in p.findall('./measure')],
                       'clefs': list(dict.fromkeys(c.text for c in p.findall('.//clef/sign'))),
-                      'lyrics': len(p.findall('.//lyric')), 'notes': len(p.findall('.//note'))})
+                      'lyrics': len(p.findall('.//lyric')), 'notes': len(p.findall('.//note')),
+                      'measureDetails': bars, 'restSpans': rest_spans(bars),
+                      'firstSoundingMeasure': next((b['index'] for b in bars if b['timedNotes']), None)})
     return {'parts': parts, 'lyrics': sum(p['lyrics'] for p in parts), 'notes': sum(p['notes'] for p in parts)}
 
 
 def check_music(details, group):
     errors, warnings = [], []
+    validate_rest_expectations(group)
     parts = details['parts']
     if len(parts) != group['expectedParts']:
         errors.append(f"Expected {group['expectedParts']} parts, found {len(parts)}.")
@@ -237,6 +359,16 @@ def check_music(details, group):
         for part, allowed in zip(parts, clefs):
             if set(part['clefs']) - set(allowed):
                 errors.append(f"Part {part['id']} has unexpected clefs {part['clefs']}; reviewed source allows {allowed}.")
+    expected_rests = group.get('expectedRestSpansPerPart')
+    if expected_rests is None:
+        warnings.append('Source rest spans are unknown; rest counts and entry positions were NOT checked against the PDF.')
+    for i, part in enumerate(parts):
+        for bar in part.get('measureDetails', []):
+            where = f"Part {part['id']}, measure index {bar['index']} (printed number {bar['number']}): "
+            errors.extend(where + message for message in bar['errors'])
+            warnings.extend(where + message for message in bar['warnings'])
+        if expected_rests is not None and i < len(expected_rests) and part.get('restSpans') != expected_rests[i]:
+            errors.append(f"Part {part['id']}: rest spans {part.get('restSpans')} differ from reviewed source {expected_rests[i]}. Check missing/duplicated rests and shifted entries; do not fix by renumbering.")
     return errors, warnings
 
 
@@ -253,7 +385,7 @@ def validate_content(xml, selection, proof=None, out=None):
                 errors.append(f"Proof page {page['page']} has no detected five-line staves; inspect manually before accepting.")
     return {'schemaVersion': 2, 'status': 'failed_content_validation' if errors else 'passed_checked_structure',
             'errors': errors, 'warnings': warnings, 'musicXml': data, 'proofPages': pages,
-            'scope': 'Reviewed part/measure/clef/lyric expectations and all-page blank/staff heuristics; not musical accuracy or text-overlap validation.'}
+            'scope': 'Reviewed part/measure/clef/lyric/rest-span expectations, explicit empty bars and whole-measure rest durations, all-page blank/staff heuristics; not full rhythmic/musical accuracy or text-overlap validation.'}
 
 
 def main():

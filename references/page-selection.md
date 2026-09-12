@@ -27,6 +27,7 @@
 - `expectedParts` 是 MusicXML 乐器声部数；钢琴左右手通常是 1 part、2 staves。
 - `playbackInstruments` 按源谱声部顺序明确播放乐器：四重奏用 `["violin","violin","viola","cello"]`，大提琴分谱用 `["cello"]`，钢琴用 `["piano"]`。详见 [音色与 MIDI 验证](playback.md)。不要根据识别结果的错误音色反推该字段。
 - `expectedMeasuresPerPart` 按声部顺序填写真实小节数（考虑弱起和分段小节），不可把全体声部节点总数当作乐曲长度。未知用 null，报告会披露未检查。
+- `expectedRestSpansPerPart` 按声部记录源谱全部连续整小节休止区间，格式与计数规则见 [休止与进入位置](rests.md)。未知为 null；不能从 OMR 反推预期。含多小节休止的源谱须核对休止数和后续进入位置，不能只数可见小节框。
 - `allowedClefsPerPart` 每个声部列出源谱允许的谱号，例如大提琴确有高音谱号则填写 `["F","G"]`。未知用 null。
 - `selectionBasis` 单份明确连续谱可为 `unambiguous_visual_review`；多独立页组为 `user`，表示按真实用户选择处理。不得伪称用户已选择。
 - 跨越自动检测边界的连续组需 `continuityReason` 说明视觉证据，例如小节号连续、配器临时减少；不能借此强行串接独立分谱。
