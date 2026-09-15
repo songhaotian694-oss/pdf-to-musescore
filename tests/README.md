@@ -2,7 +2,7 @@
 
 ## v2 回归
 
-`test-structure.py` 包含 13 项确定性规则测试：逐声部小节、错误谱号、允许的正常谱号变化、器乐误歌词、未知预期披露、重复页、错误哈希／未复核计划、5 个混合页组、空白图像、候选罚分和灰度 PDF 页数／不覆盖。
+`test-structure.py` 包含 15 项确定性规则测试：逐声部小节、错误谱号、允许的正常谱号变化、器乐误歌词、未知预期披露、重复页、错误哈希／未复核计划、5 个混合页组、空白图像、候选罚分、灰度 PDF 页数／不覆盖，以及 MSCZ 基准时间线一致和时值／休止／编号差异。
 
 `create-mixed-fixture.py <绝对目录>` 创建原创 28 小节四重奏和四个分谱 MusicXML。用 MuseScore 各自导出 PDF，再用 pypdf 按总谱 4 页＋四个分谱各 1 页合为 8 页。首次 `convert-score.ps1` 不带计划应退出 2，生成 5 组草案和全部缩略图，且不存在 `audiveris/`。逐页复核后，为测试场景编写已选择总谱／分谱的计划，分别实跑 OMR：总谱期望每声部 28 小节；分谱期望 1 声部、28 小节、正确谱号，均无歌词。保留未通过的真实 OMR 结果，它们是结构检查的负例，不得更改预期凑通过。
 
@@ -25,7 +25,7 @@
 `run-selfcheck.py` 同时验证 `validated` 与 `draft`。删除最终小节或删除布局报告时，严格模式仍分别返回 3／5；草稿模式必须返回 0、`technicalValidation=passed`、`acceptancePassed=false` 和 `draft_with_validation_issues`，并保留具体错误。正常严格结果仍为 `passed`。
 # Playback regression
 
-Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 57. MIDI note pitches/ticks must remain unchanged after instrument assignment.
+Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 59. MIDI note pitches/ticks must remain unchanged after instrument assignment.
 
 Layout: run `python tests/test-layout.py` to verify physical break removal, section/nobreak preservation, source mode, no overwrite and rejection of reintroduced breaks. Real MuseScore tests must resave both reflow and source modes, check `layoutValidation`, and inspect every proof page; fewer pages alone is not success.
 

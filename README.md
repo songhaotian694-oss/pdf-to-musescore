@@ -15,7 +15,7 @@
 
 首次调用 `scripts/convert-score.ps1 -InputPdf <PDF绝对路径> -OutputDirectory <输出父目录绝对路径>`，生成全页缩略图和预检报告。助手核对全部源页，按 [页组计划](references/page-selection.md) 准备选择计划；总谱和独立分谱不能串接。
 
-随后传入 `-SelectionPlan <计划绝对路径> -GroupId <组名>` 执行转换。默认先识别原始 PDF；结构检查失败时自动尝试 400 DPI 灰度输入，并选择更符合已复核声部、小节、谱号、歌词和休止结构的候选。详见 [识别质量](references/recognition-quality.md)。
+随后传入 `-SelectionPlan <计划绝对路径> -GroupId <组名>` 执行转换。默认先识别原始 PDF；结构检查失败时自动尝试 400 DPI 灰度输入，并选择更符合已复核声部、小节、谱号、歌词和休止结构的候选。用户明确指定同曲目、已校正的 MSCZ 时，可加 `-ReferenceMscz <绝对路径>`，候选与最终结果会核对其小节时间线和编号。详见 [识别质量](references/recognition-quality.md)和 [MSCZ 基准](references/reference-mscz.md)。
 
 默认 `-OutputMode draft`，即使内容、音色或布局检查发现问题，也尽量输出明确标记的可编辑 MSCZ 草稿；技术上无法生成或重开文件才停止。需要所有门禁通过后才输出时使用 `-OutputMode validated`。详见 [输出模式](references/output-modes.md)。
 
@@ -40,4 +40,4 @@ python tests/test-layout.py
 python tests/test-rests.py
 ```
 
-当前共 57 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。
+当前共 59 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。

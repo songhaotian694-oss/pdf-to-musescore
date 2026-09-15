@@ -74,5 +74,23 @@ class Gates(unittest.TestCase):
             self.assertEqual(report['profile'],'grayscale-300')
             self.assertEqual(len(PdfReader(output).pages),2)
             with self.assertRaises(FileExistsError): preprocess.convert(source,output,300)
+    def test_reference_timeline_matches(self):
+        bars=[{'index':1,'number':'0','durationQuarters':'1','meterQuarters':'4','restOnly':False,'systemStart':True},
+              {'index':2,'number':'1','durationQuarters':'4','meterQuarters':'4','restOnly':True,'systemStart':False}]
+        details={'parts':[{'measureDetails':copy.deepcopy(bars)}]}
+        baseline={'parts':[{'measures':copy.deepcopy(bars)}],'referenceScore':'reference.mscz',
+                  'referenceScoreSha256':'abc','scope':'timeline'}
+        self.assertEqual(s.compare_reference(details,baseline)['status'],'passed')
+    def test_reference_timeline_detects_structure_before_numbering(self):
+        reference=[{'index':1,'number':'0','durationQuarters':'1','meterQuarters':'4','restOnly':False,'systemStart':True},
+                   {'index':2,'number':'1','durationQuarters':'4','meterQuarters':'4','restOnly':True,'systemStart':True}]
+        candidate=copy.deepcopy(reference); candidate[0]['durationQuarters']='4'; candidate[1]['restOnly']=False; candidate[1]['number']='2'
+        result=s.compare_reference({'parts':[{'measureDetails':candidate}]},
+                                   {'parts':[{'measures':reference}],'referenceScore':'reference.mscz',
+                                    'referenceScoreSha256':'abc','scope':'timeline'})
+        self.assertEqual(result['status'],'failed_measure_number_validation')
+        self.assertTrue(any('durations' in error for error in result['errors']))
+        self.assertTrue(any('rest timeline' in error for error in result['errors']))
+        self.assertTrue(any('numbers' in error for error in result['errors']))
 
 if __name__=='__main__': unittest.main(verbosity=2)

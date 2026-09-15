@@ -12,6 +12,7 @@ param(
     [string]$TessdataDirectory,
     [string]$SelectionPlan,
     [string]$GroupId,
+    [string]$ReferenceMscz,
     [string]$PythonPath,
     [ValidateSet('draft','validated')][string]$OutputMode = 'draft',
     [ValidateSet('auto','original')][string]$RecognitionProfile = 'auto',
@@ -20,7 +21,7 @@ param(
 )
 . "$PSScriptRoot/common.ps1"
 $dir = $null
-$report = [ordered]@{schemaVersion=4; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
+$report = [ordered]@{schemaVersion=5; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); referenceMscz=$null; referenceBaseline=$null; measureNumberValidation=$null; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
 try {
     $InputPdf = Assert-AbsolutePath $InputPdf
     if (-not $KeepIntermediate) { throw 'Intermediate files are required for correction; keep -KeepIntermediate true.' }
@@ -68,6 +69,20 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $TessdataDirectory 'eng.traineddata'))) { throw 'Configured Tesseract data directory has no eng.traineddata.' }
         $childEnv.TESSDATA_PREFIX = $TessdataDirectory
     }
+    $referenceBaseline = $null
+    if ($ReferenceMscz) {
+        $ReferenceMscz = Assert-AbsolutePath $ReferenceMscz
+        if ([IO.Path]::GetExtension($ReferenceMscz) -ine '.mscz') { throw '-ReferenceMscz must point to an MSCZ file explicitly designated by the user as corrected.' }
+        if (-not $m) { throw 'MuseScore is required to read the user-designated reference MSCZ.' }
+        $referenceXml = Join-Path $dir 'reference-score.musicxml'
+        $referenceExport = Invoke-ScoreProcess $m @('-o',$referenceXml,$ReferenceMscz) 300 $dir 'reference-musicxml-export'
+        if ($referenceExport.exitCode -ne 0 -or -not (Test-Path -LiteralPath $referenceXml)) { throw 'Could not export MusicXML from the reference MSCZ.' }
+        $referenceBuild = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'reference','--xml',$referenceXml,'--reference-score',$ReferenceMscz,'--out',$dir) 60 $dir 'reference-baseline'
+        if ($referenceBuild.exitCode -ne 0 -or -not $referenceBuild.stdout) { throw "Could not build the reference MSCZ timeline: $($referenceBuild.stderr)" }
+        $referenceBaseline = Join-Path $dir 'reference-baseline.json'
+        $report.referenceMscz = $ReferenceMscz
+        $report.referenceBaseline = $referenceBuild.stdout | ConvertFrom-Json
+    }
     $runRecognition = {
         param([string]$Profile, [string]$RecognitionInput)
         $attemptDir = Join-Path $omr $Profile
@@ -100,7 +115,9 @@ try {
         }
         $candidateOut = Join-Path $dir ("candidate-$Profile")
         [void][IO.Directory]::CreateDirectory($candidateOut)
-        $checked = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$xmls[0].FullName,'--selection',(Join-Path $dir 'selection.json'),'--out',$candidateOut) 60 $dir ("content-$Profile")
+        $checkArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$xmls[0].FullName,'--selection',(Join-Path $dir 'selection.json'),'--out',$candidateOut)
+        if ($referenceBaseline) { $checkArgs += @('--reference',$referenceBaseline) }
+        $checked = Invoke-ScoreProcess $python $checkArgs 60 $dir ("content-$Profile")
         $contentJson = if ($checked.stdout) { $checked.stdout | ConvertFrom-Json } else { $null }
         $attempt.musicXml = $xmls[0].FullName
         $attempt.status = if ($checked.exitCode -eq 0) { 'passed_checked_structure' } elseif ($checked.exitCode -eq 3) { 'failed_content_validation' } else { 'failed_inspection' }
@@ -148,7 +165,7 @@ try {
     $omrFiles = @(Get-ChildItem -LiteralPath $omr -Recurse -Filter *.omr)
     if ($omrFiles.Count -eq 0) { $report.warnings += 'Audiveris did not save an OMR project; MusicXML and logs are retained.' }
     if (-not $m) { throw 'MuseScore is missing. MusicXML/OMR are retained in audiveris; install MuseScore Studio 4 and use the documented resume commands.' }
-    @{schemaVersion=4; startedUtc=$report.startedUtc; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$report.selectedRecognitionProfile; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
+    @{schemaVersion=5; startedUtc=$report.startedUtc; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$report.selectedRecognitionProfile; referenceMscz=$report.referenceMscz; referenceBaseline=$referenceBaseline; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
     $score = Join-Path $dir 'score.mscz'
     $imported = Join-Path $dir 'score-imported.mscz'
     $assigned = Join-Path $dir 'score-playback.mscz'
@@ -194,6 +211,7 @@ try {
         throw 'Output verification failed; inspect verification.stdout.log and verification.stderr.log. Generated files are diagnostic drafts, not accepted deliverables.'
     }
     $report.contentValidation = $report.verification.contentValidation
+    $report.measureNumberValidation = $report.verification.savedContentValidation.measureNumberValidation
     $report.warnings = @(@($report.warnings) + @($report.verification.warnings) | Select-Object -Unique)
     $report.draftUsable = $true
     if ($OutputMode -eq 'draft') {

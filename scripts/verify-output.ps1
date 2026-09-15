@@ -2,7 +2,7 @@
 param([Parameter(Mandatory)][string]$RunDirectory, [string]$MuseScorePath, [string]$PdfInfoPath, [string]$PythonPath,
       [ValidateSet('draft','validated')][string]$OutputMode)
 . "$PSScriptRoot/common.ps1"
-$result = [ordered]@{status='failed'; outputMode=$null; acceptancePassed=$false; technicalValidation='failed'; contentValidation=$null; savedContentValidation=$null; playbackValidation=@(); layoutValidation=$null; errors=@(); warnings=@(Get-CorrectionWarnings); files=@(); musicXml=$null; proofPages=$null; reopened=$false}
+$result = [ordered]@{status='failed'; outputMode=$null; acceptancePassed=$false; technicalValidation='failed'; contentValidation=$null; savedContentValidation=$null; measureNumberValidation=$null; playbackValidation=@(); layoutValidation=$null; errors=@(); warnings=@(Get-CorrectionWarnings); files=@(); musicXml=$null; proofPages=$null; reopened=$false}
 try {
     $dir = Assert-AbsolutePath $RunDirectory
     $manifest = Get-Content -LiteralPath (Join-Path $dir 'run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -39,7 +39,9 @@ try {
     if (-not $python) { throw 'Python missing for mandatory all-page content validation.' }
     $contentDir = Join-Path $dir ('structure-verify-' + [guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($contentDir)
-    $content = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$manifest.musicXml,'--selection',$manifest.selection,'--proof',(Join-Path $dir 'score-proof.pdf'),'--out',$contentDir) 300 $dir 'content-proof'
+    $contentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$manifest.musicXml,'--selection',$manifest.selection,'--proof',(Join-Path $dir 'score-proof.pdf'),'--out',$contentDir)
+    if ($manifest.PSObject.Properties['referenceBaseline'] -and $manifest.referenceBaseline) { $contentArgs += @('--reference',$manifest.referenceBaseline) }
+    $content = Invoke-ScoreProcess $python $contentArgs 300 $dir 'content-proof'
     if ($content.stdout) { $result.contentValidation = $content.stdout | ConvertFrom-Json }
     if ($content.exitCode -ne 0) {
         if ($content.exitCode -ne 3) { throw "Content inspection failed; draft verification cannot continue: $($content.stdout) $($content.stderr)" }
@@ -52,7 +54,9 @@ try {
     # Validate the final saved score as well as the original recognition output.
     $savedContentDir = Join-Path $dir ('saved-content-' + [guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($savedContentDir)
-    $savedContent = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$reopen,'--selection',$manifest.selection,'--out',$savedContentDir) 60 $dir 'content-saved-score'
+    $savedContentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$reopen,'--selection',$manifest.selection,'--out',$savedContentDir)
+    if ($manifest.PSObject.Properties['referenceBaseline'] -and $manifest.referenceBaseline) { $savedContentArgs += @('--reference',$manifest.referenceBaseline) }
+    $savedContent = Invoke-ScoreProcess $python $savedContentArgs 60 $dir 'content-saved-score'
     if ($savedContent.stdout) { $result['savedContentValidation'] = $savedContent.stdout | ConvertFrom-Json }
     if ($savedContent.exitCode -ne 0) {
         if ($savedContent.exitCode -ne 3) { throw "Final MSCZ content inspection failed: $($savedContent.stdout) $($savedContent.stderr)" }
@@ -61,6 +65,7 @@ try {
         if ($OutputMode -eq 'validated') { throw "Final MSCZ content differs from reviewed expectations: $($savedContent.stdout) $($savedContent.stderr)" }
         $result.warnings += 'Draft mode: final MSCZ differs from reviewed content expectations.'
     }
+    $result.measureNumberValidation = $result.savedContentValidation.measureNumberValidation
     # Always regenerate MIDI from the final saved MSCZ, even without -ExportMidi.
     $result.status = 'failed_playback_validation'
     $assignment = Join-Path $dir 'playback-assignment.json'

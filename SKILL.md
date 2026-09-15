@@ -14,10 +14,11 @@ description: Convert printed sheet-music PDFs into editable MuseScore scores usi
 3. 检查**每一页**缩略图：系统与谱表、标题／乐器、谱号、小节编号是否重新开始、页眉页脚和歌词位置。自动分组只是草案；扫描 PDF 可能没有文本，谱表启发式也可能不准，必须视觉复核。
 4. 用户已指定总谱、分谱或页码时按既有选择继续；单份明确连续乐谱可自行核对后继续，不必再问。多个独立页组且用户未选范围时，展示页组并询问需要总谱、哪些分谱或全部分别生成。不得串接独立分谱。
 5. 按 [页组计划格式](references/page-selection.md) 写入 JSON：源哈希、已检查的全部页、各组预期声部数／歌词／小节数／允许谱号。记录源谱中可确认的信息，不能根据 OMR 输出反推预期以绕过检查。未知小节数和谱号用 null，披露未执行对应检查。
+6. 仅当用户明确指定某个同曲目 MSCZ 已经校正并作为基准时，传入 `-ReferenceMscz <绝对路径>`。脚本从它提取实际小节、时值、休止和系统起点编号，候选和最终结果都必须与其比较。详见 [已校正 MSCZ 基准](references/reference-mscz.md)。
 
 ## 分组转换
 
-运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。默认 `-RecognitionProfile auto`：先识别原始 PDF，结构检查失败时自动尝试 400 DPI 灰度输入，并按已复核结构选择问题更少的候选；无需让用户理解或选择 Audiveris 参数。详见 [自动提高识别质量](references/recognition-quality.md)。
+运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。默认 `-RecognitionProfile auto`：先识别原始 PDF，结构检查失败时自动尝试 400 DPI 灰度输入，并按已复核结构选择问题更少的候选；若提供已校正 MSCZ 基准，其时间线差异也计入候选选择。无需让用户理解或选择 Audiveris 参数。详见 [自动提高识别质量](references/recognition-quality.md)。
 
 默认 `-OutputMode draft`：有内容、播放或布局疑点时继续生成明确标记的可编辑草稿；技术上无法生成／重开文件时才停止。需要门禁全部通过后才输出时使用 `-OutputMode validated`。两种模式、状态和退出码见 [草稿与严格验收](references/output-modes.md)。
 
@@ -42,6 +43,7 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 - `playbackValidation`：设置导入后的乐器 ID、通道程序号与工程音源，再让 MuseScore 重新保存 MSCZ；从最终 MSCZ 新导出 MIDI，逐个发声音符核验实际程序号、bank 和声部通道。无论是否请求交付 MIDI 都执行；音色错误返回退出码 4 / `failed_playback_validation`。
 - `layoutValidation`：核验重新保存后的断点是否符合选定排版策略，失败返回退出码 5 / `failed_layout_validation`。这不代替全部校对页的视觉检查。
 - `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号、歌词及休止区间。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
+- `measureNumberValidation`：提供用户明确指定的已校正 MSCZ 时，核对实际小节序列、每小节时值、整小节静默、全部小节编号以及基准系统起点编号。结构不同先人工修复，再应用编号；只改可见编号不算修复。未提供基准时报告 `not_checked`。
 - 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
 - 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。
 - 草稿模式报告 `editable_draft_needs_correction` 或 `editable_draft_ready_for_review`，保留所有检查错误且 `acceptancePassed=false`；它可以作为校正起点，不能称作成品。严格模式只有技术、已配置结构、播放音色和布局检查全部通过，才报告 `completed_needs_manual_review`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。

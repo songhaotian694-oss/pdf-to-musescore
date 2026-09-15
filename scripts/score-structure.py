@@ -230,7 +230,7 @@ def measure_details(part):
     result, divisions, meters = [], None, {}
     for index, measure in enumerate(part.findall('measure'), 1):
         errors, warnings = [], []
-        cursor = Fraction(0)
+        cursor, max_cursor = Fraction(0), Fraction(0)
         regular = [n for n in measure.findall('note') if n.find('grace') is None]
         rests = [n for n in regular if n.find('rest') is not None]
         rest_only = bool(regular) and len(regular) == len(rests)
@@ -276,8 +276,13 @@ def measure_details(part):
                     errors.append(f'Whole-measure rest duration/start is {duration}/{cursor} quarter notes; expected {meter}/0.')
             if node.find('chord') is None:
                 cursor += duration
+                max_cursor = max(max_cursor, cursor)
+        meter = meters.get('1', meters.get('all'))
         result.append({'index': index, 'number': measure.get('number'), 'restOnly': rest_only,
                        'timedNotes': len(regular)-len(rests), 'rests': len(rests),
+                       'durationQuarters': str(max_cursor),
+                       'meterQuarters': str(meter) if meter is not None else None,
+                       'systemStart': index == 1 or (measure.find('print') is not None and measure.find('print').get('new-system') == 'yes'),
                        'wholeMeasureRests': full_rests,
                        'hiddenRests': sum(n.get('print-object') == 'no' for n in rests),
                        'multipleRestCounts': [int(e.text) for e in measure.findall('./attributes/measure-style/multiple-rest')],
@@ -391,10 +396,71 @@ def quality_penalty(details, group, errors):
     return sum(components.values()), components
 
 
-def validate_content(xml, selection, proof=None, out=None):
+def make_reference_baseline(details, score_path, xml_path):
+    return {'schemaVersion': 1, 'status': 'reference_ready',
+            'referenceScore': str(score_path), 'referenceScoreSha256': digest(score_path),
+            'referenceMusicXml': str(xml_path), 'referenceMusicXmlSha256': digest(xml_path),
+            'parts': [{'index': index + 1, 'name': part.get('name'),
+                       'measures': [{'index': bar['index'], 'number': bar['number'],
+                                     'durationQuarters': bar.get('durationQuarters'),
+                                     'meterQuarters': bar.get('meterQuarters'),
+                                     'restOnly': bar['restOnly'], 'systemStart': bar.get('systemStart', False)}
+                                    for bar in part['measureDetails']]}
+                      for index, part in enumerate(details['parts'])],
+            'scope': 'Actual measure sequence, duration, full-bar silence and reference-system start numbering exported from the user-designated corrected MSCZ.'}
+
+
+def compare_reference(details, baseline):
+    errors, penalty = [], 0
+    current, expected = details['parts'], baseline['parts']
+    if len(current) != len(expected):
+        errors.append(f"Reference MSCZ has {len(expected)} parts; candidate has {len(current)}.")
+        penalty += abs(len(current) - len(expected)) * 100000
+    for index, (part, reference_part) in enumerate(zip(current, expected), 1):
+        bars, reference_bars = part['measureDetails'], reference_part['measures']
+        if len(bars) != len(reference_bars):
+            errors.append(f"Part {index} has {len(bars)} actual measures; reference MSCZ has {len(reference_bars)}.")
+            penalty += abs(len(bars) - len(reference_bars)) * 1000
+        duration_differences, rest_differences, number_differences = [], [], []
+        for bar, reference_bar in zip(bars, reference_bars):
+            if bar.get('durationQuarters') != reference_bar.get('durationQuarters'):
+                duration_differences.append(bar['index'])
+            if bar.get('restOnly') != reference_bar.get('restOnly'):
+                rest_differences.append(bar['index'])
+            if bar.get('number') != reference_bar.get('number'):
+                number_differences.append(bar['index'])
+        if duration_differences:
+            errors.append(f"Part {index} measure durations differ from reference at indices {duration_differences[:20]}.")
+            penalty += len(duration_differences) * 200
+        if rest_differences:
+            errors.append(f"Part {index} sounding/rest timeline differs from reference at indices {rest_differences[:20]}.")
+            penalty += len(rest_differences) * 500
+        if number_differences:
+            errors.append(f"Part {index} measure numbers differ from reference at indices {number_differences[:20]}.")
+            penalty += len(number_differences) * 100
+        reference_systems = [(bar['index'], bar.get('number')) for bar in reference_bars if bar.get('systemStart')]
+        wrong_system_numbers = [(bar_index, number) for bar_index, number in reference_systems
+                                if bar_index <= len(bars) and bars[bar_index - 1].get('number') != number]
+        if wrong_system_numbers:
+            errors.append(f"Part {index} reference-system starting measure numbers do not match: {wrong_system_numbers[:20]}.")
+            penalty += len(wrong_system_numbers) * 200
+    return {'status': 'passed' if not errors else 'failed_measure_number_validation',
+            'errors': errors, 'penalty': penalty,
+            'referenceScore': baseline['referenceScore'],
+            'referenceScoreSha256': baseline['referenceScoreSha256'],
+            'scope': baseline['scope']}
+
+
+def validate_content(xml, selection, proof=None, out=None, reference=None):
     data = music_details(xml)
     errors, warnings = check_music(data, selection['group'])
+    reference_validation = None
+    if reference is not None:
+        reference_validation = compare_reference(data, reference)
+        errors.extend(reference_validation['errors'])
     penalty, components = quality_penalty(data, selection['group'], errors)
+    components['referenceDifference'] = reference_validation['penalty'] if reference_validation else 0
+    penalty += components['referenceDifference']
     pages = []
     if proof is not None:
         pages = analyze(proof, out / 'proof-thumbnails')
@@ -406,15 +472,16 @@ def validate_content(xml, selection, proof=None, out=None):
     return {'schemaVersion': 3, 'status': 'failed_content_validation' if errors else 'passed_checked_structure',
             'errors': errors, 'warnings': warnings, 'musicXml': data, 'proofPages': pages,
             'qualityPenalty': penalty, 'qualityComponents': components,
+            'measureNumberValidation': reference_validation or {'status': 'not_checked', 'errors': [], 'scope': 'No user-designated corrected MSCZ reference was supplied.'},
             'scope': 'Reviewed part/measure/clef/lyric/rest-span expectations, explicit empty bars and whole-measure rest durations, all-page blank/staff heuristics; not full rhythmic/musical accuracy or text-overlap validation.'}
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('mode', choices=['prepare','check'])
+    ap.add_argument('mode', choices=['prepare','check','reference'])
     ap.add_argument('--input'); ap.add_argument('--out', required=True)
     ap.add_argument('--plan'); ap.add_argument('--group')
-    ap.add_argument('--xml'); ap.add_argument('--selection'); ap.add_argument('--proof')
+    ap.add_argument('--xml'); ap.add_argument('--selection'); ap.add_argument('--proof'); ap.add_argument('--reference'); ap.add_argument('--reference-score')
     args = ap.parse_args()
     out = absolute(args.out)
     try:
@@ -425,11 +492,17 @@ def main():
                 result, code = pre, 2
             else:
                 result, code = select(source, pre, absolute(args.plan), args.group, out), 0
-        else:
+        elif args.mode == 'check':
             selection = json.loads(absolute(args.selection).read_text(encoding='utf-8-sig'))
-            result = validate_content(absolute(args.xml), selection, absolute(args.proof) if args.proof else None, out)
+            reference = json.loads(absolute(args.reference).read_text(encoding='utf-8-sig')) if args.reference else None
+            result = validate_content(absolute(args.xml), selection, absolute(args.proof) if args.proof else None, out, reference)
             write_json(out / ('content-proof.json' if args.proof else 'content-musicxml.json'), result)
             code = 3 if result['errors'] else 0
+        else:
+            xml, score = absolute(args.xml), absolute(args.reference_score)
+            result = make_reference_baseline(music_details(xml), score, xml)
+            write_json(out / 'reference-baseline.json', result)
+            code = 0
     except Exception as e:
         result, code = {'status': 'failed', 'error': str(e)}, 1
     print(json.dumps(result, ensure_ascii=False))

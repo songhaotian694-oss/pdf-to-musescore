@@ -10,6 +10,8 @@ See `report.json` for `outputMode`, `draftUsable`, `acceptancePassed`, and separ
 
 `recognitionAttempts` records original and optional 400 DPI grayscale Audiveris attempts. `selectedRecognitionProfile` identifies the chosen MusicXML. `qualityPenalty` compares reviewed structure only and is not a note-accuracy percentage.
 
+When the user explicitly supplies a corrected reference MSCZ, `reference-baseline.json` records its hashes and measure timeline. `measureNumberValidation` compares the final reopened score with that baseline. `not_checked` means no corrected reference MSCZ was supplied.
+
 `conversion.log` records commands, exit codes and durations. Separate stdout/stderr logs can contain score text and local paths; review before sharing.
 
 Playback is a separate mandatory gate: `playback-assignment.json` records intended instruments; `verification.playbackValidation` in `report.json` and `playback-verify-*.json` check saved MSCZ routing and actual note-on programs in freshly exported MIDI. A delivered `score.mid` is checked too. `failed_playback_validation` means the draft is not accepted. MIDI verification does not replace listening.
