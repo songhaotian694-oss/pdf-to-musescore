@@ -1,16 +1,27 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$RunDirectory, [string]$MuseScorePath, [string]$PdfInfoPath, [string]$PythonPath,
-      [ValidateSet('draft','validated')][string]$OutputMode)
+      [ValidateSet('draft','validated')][string]$OutputMode, [string]$ScorePath, [string]$ProofPdfPath)
 . "$PSScriptRoot/common.ps1"
-$result = [ordered]@{status='failed'; outputMode=$null; acceptancePassed=$false; technicalValidation='failed'; contentValidation=$null; savedContentValidation=$null; measureNumberValidation=$null; playbackValidation=@(); layoutValidation=$null; errors=@(); warnings=@(Get-CorrectionWarnings); files=@(); musicXml=$null; proofPages=$null; reopened=$false}
+$result = [ordered]@{status='failed'; outputMode=$null; acceptancePassed=$false; technicalValidation='failed'; contentValidation=$null; savedContentValidation=$null; measureNumberValidation=$null; playbackValidation=@(); layoutValidation=$null; errors=@(); warnings=@(Get-CorrectionWarnings); files=@(); musicXml=$null; proofPages=$null; reopened=$false; verifiedScore=$null; proofPdf=$null}
 try {
     $dir = Assert-AbsolutePath $RunDirectory
     $manifest = Get-Content -LiteralPath (Join-Path $dir 'run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $OutputMode) { $OutputMode = if ($manifest.PSObject.Properties['outputMode']) { $manifest.outputMode } else { 'validated' } }
     $result.outputMode = $OutputMode
     $since = [datetime]::Parse($manifest.startedUtc).ToUniversalTime()
-    $required = @($manifest.musicXml, (Join-Path $dir 'score.mscz'), (Join-Path $dir 'score-proof.pdf'))
-    if ($manifest.exportMidi) { $required += Join-Path $dir 'score.mid' }
+    $score = if ($ScorePath) { Assert-AbsolutePath $ScorePath } else { Join-Path $dir 'score.mscz' }
+    $proof = if ($ProofPdfPath) { Assert-AbsolutePath $ProofPdfPath } else { Join-Path $dir 'score-proof.pdf' }
+    $m = Find-ScoreTool MuseScore $MuseScorePath
+    if (-not $m) { throw 'MuseScore missing; cannot verify reopening MSCZ.' }
+    if ($ScorePath -and -not $ProofPdfPath) {
+        $proof = Join-Path $dir ('correction-proof-' + [guid]::NewGuid().ToString('N') + '.pdf')
+        $proofExport = Invoke-ScoreProcess $m @('-o',$proof,$score) 300 $dir 'verify-correction-proof'
+        if ($proofExport.exitCode -ne 0 -or -not (Test-Path -LiteralPath $proof)) { throw 'Cannot export a proof PDF from the corrected MSCZ.' }
+    }
+    $result.verifiedScore = $score
+    $result.proofPdf = $proof
+    $required = @($manifest.musicXml, $score, $proof)
+    if ($manifest.exportMidi -and -not $ScorePath) { $required += Join-Path $dir 'score.mid' }
     foreach ($path in $required) {
         $f = Get-Item -LiteralPath $path
         if ($f.Length -eq 0 -or $f.LastWriteTimeUtc -lt $since.AddSeconds(-2)) { throw "Empty or stale output: $path" }
@@ -21,15 +32,13 @@ try {
     if ($result.musicXml.voices -gt 1 -or $result.musicXml.parts -gt 1) { $result.warnings += 'Multiple voices/parts detected: check voice assignments, rests and synchronization.' }
     $pdf = Find-ScoreTool PdfInfo $PdfInfoPath
     if (-not $pdf) { throw 'pdfinfo is required to verify the proof PDF page count. Set -PdfInfoPath.' }
-    $result.proofPages = (Get-PdfDetails (Join-Path $dir 'score-proof.pdf') $pdf).pages
-    $m = Find-ScoreTool MuseScore $MuseScorePath
-    if (-not $m) { throw 'MuseScore missing; cannot verify reopening MSCZ.' }
+    $result.proofPages = (Get-PdfDetails $proof $pdf).pages
     $reopen = Join-Path $dir ('verify-reopen-' + [guid]::NewGuid().ToString('N') + '.musicxml')
-    $r = Invoke-ScoreProcess $m @('-o',$reopen,(Join-Path $dir 'score.mscz')) 300 $dir 'verify-reopen'
+    $r = Invoke-ScoreProcess $m @('-o',$reopen,$score) 300 $dir 'verify-reopen'
     if ($r.exitCode -ne 0) { throw "MuseScore reopen failed (exit $($r.exitCode)); see verify-reopen.stderr.log." }
     [void](Get-MusicXmlDetails $reopen)
     $result.reopened = $true
-    if ($manifest.exportMidi) {
+    if ($manifest.exportMidi -and -not $ScorePath) {
         $bytes = [IO.File]::ReadAllBytes((Join-Path $dir 'score.mid'))
         if ($bytes.Length -lt 14 -or [Text.Encoding]::ASCII.GetString($bytes,0,4) -ne 'MThd') { throw 'Invalid MIDI header.' }
     }
@@ -39,7 +48,8 @@ try {
     if (-not $python) { throw 'Python missing for mandatory all-page content validation.' }
     $contentDir = Join-Path $dir ('structure-verify-' + [guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($contentDir)
-    $contentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$manifest.musicXml,'--selection',$manifest.selection,'--proof',(Join-Path $dir 'score-proof.pdf'),'--out',$contentDir)
+    $contentXml = if ($ScorePath) { $reopen } else { $manifest.musicXml }
+    $contentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$contentXml,'--selection',$manifest.selection,'--proof',$proof,'--out',$contentDir)
     if ($manifest.PSObject.Properties['referenceBaseline'] -and $manifest.referenceBaseline) { $contentArgs += @('--reference',$manifest.referenceBaseline) }
     $content = Invoke-ScoreProcess $python $contentArgs 300 $dir 'content-proof'
     if ($content.stdout) { $result.contentValidation = $content.stdout | ConvertFrom-Json }
@@ -75,16 +85,16 @@ try {
         $result.warnings += 'Draft mode: playback validation was skipped because no valid assignment exists.'
     } else {
         $midi = Join-Path $dir ('verify-playback-' + [guid]::NewGuid().ToString('N') + '.mid')
-        $export = Invoke-ScoreProcess $m @('-o',$midi,(Join-Path $dir 'score.mscz')) 300 $dir 'verify-midi-export'
+        $export = Invoke-ScoreProcess $m @('-o',$midi,$score) 300 $dir 'verify-midi-export'
         if ($export.exitCode -ne 0 -or -not (Test-Path -LiteralPath $midi)) {
             if ($OutputMode -eq 'validated') { throw 'Cannot export MIDI from the final MSCZ for playback verification.' }
             $result.errors += 'Cannot export a verification MIDI from the final MSCZ.'
         } else {
             $midiFiles = @($midi)
-            if ($manifest.exportMidi) { $midiFiles += Join-Path $dir 'score.mid' }
+            if ($manifest.exportMidi -and -not $ScorePath) { $midiFiles += Join-Path $dir 'score.mid' }
             foreach ($midiFile in $midiFiles) {
                 $playbackReport = Join-Path $dir ('playback-verify-' + [guid]::NewGuid().ToString('N') + '.json')
-                $playback = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-playback.py",'verify','--score',(Join-Path $dir 'score.mscz'),'--selection',$manifest.selection,'--assignment',$assignment,'--midi',$midiFile,'--report',$playbackReport) 60 $dir 'playback-verify'
+                $playback = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-playback.py",'verify','--score',$score,'--selection',$manifest.selection,'--assignment',$assignment,'--midi',$midiFile,'--report',$playbackReport) 60 $dir 'playback-verify'
                 if ($playback.stdout) { $result.playbackValidation += ($playback.stdout | ConvertFrom-Json) }
                 if ($playback.exitCode -ne 0) {
                     $result.errors += @($result.playbackValidation[-1].errors)
@@ -100,7 +110,7 @@ try {
         $appliedLayout = Get-Content -LiteralPath $layoutAssignment -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($manifest.PSObject.Properties['layoutMode'] -and $appliedLayout.mode -ne $manifest.layoutMode) { throw 'Applied layout mode differs from the requested mode.' }
         $layoutReport = Join-Path $dir ('layout-verify-' + [guid]::NewGuid().ToString('N') + '.json')
-        $layout = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-layout.py",'verify','--score',(Join-Path $dir 'score.mscz'),'--assignment',$layoutAssignment,'--report',$layoutReport) 60 $dir 'layout-verify'
+        $layout = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-layout.py",'verify','--score',$score,'--assignment',$layoutAssignment,'--report',$layoutReport) 60 $dir 'layout-verify'
         if ($layout.stdout) { $result['layoutValidation'] = $layout.stdout | ConvertFrom-Json }
         if ($layout.exitCode -ne 0) {
             $result.errors += @($result.layoutValidation.errors)
@@ -127,3 +137,5 @@ if ($result.status -eq 'failed_content_validation') { exit 3 }
 if ($result.status -eq 'failed_playback_validation') { exit 4 }
 if ($result.status -eq 'failed_layout_validation') { exit 5 }
 if ($result.status -notin @('passed','draft_with_validation_issues')) { exit 1 }
+
+

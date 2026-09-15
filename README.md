@@ -19,6 +19,8 @@
 
 默认 `-OutputMode draft`，即使内容、音色或布局检查发现问题，也尽量输出明确标记的可编辑 MSCZ 草稿；技术上无法生成或重开文件才停止。需要所有门禁通过后才输出时使用 `-OutputMode validated`。详见 [输出模式](references/output-modes.md)。
 
+草稿发现错误后会生成 `correction-worklist.json`，把错误关联到可用的源页、校对页、声部和小节。Skill 随后最多执行两轮有视觉证据的副本修正与重新验证；无法从 PDF 唯一确定的音符不会猜测。详见 [自动校正](references/auto-correction.md)。
+
 `-ExportMidi` 可选，音色验证始终执行。默认 `-LayoutMode reflow` 清理导入副本的硬换行／分页；要求保留源断点时选 `source`。
 
 每次创建新输出目录，保留原件及中间结果。输出包括 MSCZ、校对 PDF、可选 MIDI、原始 MusicXML 与验证报告。
@@ -40,4 +42,4 @@ python tests/test-layout.py
 python tests/test-rests.py
 ```
 
-当前共 59 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。
+当前共 63 项单元测试和 7 项真实应用回归场景，其中包含校正版 MSCZ 自动重导校对 PDF 并重新验收。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。

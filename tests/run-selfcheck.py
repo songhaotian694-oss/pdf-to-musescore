@@ -18,12 +18,13 @@ cases=[('normal','validated',0,'passed'),
        ('missing-layout-report','validated',5,'failed_layout_validation'),
        ('wrong-layout-mode','validated',5,'failed_layout_validation'),
        ('missing-final-measure-draft','draft',0,'draft_with_validation_issues'),
-       ('missing-layout-report-draft','draft',0,'draft_with_validation_issues')]
+       ('missing-layout-report-draft','draft',0,'draft_with_validation_issues'),
+       ('corrected-score','validated',0,'passed')]
 for case,mode,expected,expected_status in cases:
     d=out/case;d.mkdir()
-    for name in ['run.json','score-proof.pdf','score.mid','playback-assignment.json']:
+    for name in ['run.json','score-proof.pdf','score.mid','playback-assignment.json','selection.json']:
         shutil.copy2(source/name,d/name)
-    manifest=json.loads((d/'run.json').read_text(encoding='utf-8-sig'));manifest['layoutMode']='reflow'
+    manifest=json.loads((d/'run.json').read_text(encoding='utf-8-sig'));manifest['layoutMode']='reflow';manifest['selection']=str((d/'selection.json').resolve())
     (d/'run.json').write_text(json.dumps(manifest),encoding='utf-8')
     assignment=layout.apply(source/'score.mscz',d/'score.mscz','reflow')
     if case=='wrong-layout-mode':assignment['mode']='source'
@@ -37,7 +38,12 @@ for case,mode,expected,expected_status in cases:
                     for staff in root.findall('./Score/Staff'):staff.remove(staff.findall('Measure')[-1])
                     data=ET.tostring(root,encoding='utf-8',xml_declaration=True)
                 z.writestr(e,data)
-    proc=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(Path(__file__).parents[1]/'scripts/verify-output.ps1'),'-RunDirectory',str(d),'-OutputMode',mode],capture_output=True,encoding='utf-8',timeout=1200)
+    command=['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(Path(__file__).parents[1]/'scripts/verify-output.ps1'),'-RunDirectory',str(d),'-OutputMode',mode]
+    corrected=None
+    if case=='corrected-score':
+        corrected=d/'score-correction-01.mscz';shutil.copy2(d/'score.mscz',corrected)
+        command.extend(['-ScorePath',str(corrected)])
+    proc=subprocess.run(command,capture_output=True,encoding='utf-8',timeout=1200)
     (d/'verification.json').write_text(proc.stdout,encoding='utf-8')
     (d/'stderr.log').write_text(proc.stderr,encoding='utf-8')
     result=json.loads(proc.stdout.lstrip('\ufeff'))
@@ -45,7 +51,11 @@ for case,mode,expected,expected_status in cases:
     if mode=='draft':
         passed=passed and result['technicalValidation']=='passed' and not result['acceptancePassed']
         passed=passed and len(result['errors'])==len(set(result['errors']))
+    if corrected:
+        passed=passed and Path(result['verifiedScore'])==corrected and Path(result['proofPdf']).name.startswith('correction-proof-')
     records.append({'case':case,'mode':mode,'expectedExit':expected,'exitCode':proc.returncode,'passed':passed,'status':result['status'],'errors':result['errors']})
 (out/'results.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
 print(json.dumps(records,indent=2))
 raise SystemExit(0 if all(r['passed'] for r in records) else 1)
+
+

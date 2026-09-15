@@ -22,6 +22,8 @@ description: Convert printed sheet-music PDFs into editable MuseScore scores usi
 
 默认 `-OutputMode draft`：有内容、播放或布局疑点时继续生成明确标记的可编辑草稿；技术上无法生成／重开文件时才停止。需要门禁全部通过后才输出时使用 `-OutputMode validated`。两种模式、状态和退出码见 [草稿与严格验收](references/output-modes.md)。
 
+草稿出现错误后不要立即交付。读取自动生成的 `correction-worklist.json`，主动打开其中的源 PDF 页和校对谱页，在新 MSCZ／OMR 副本上最多进行两轮有视觉证据的修正，每轮重新导出并运行全部验证。明确可见的错误直接修正，不要求用户理解技术细节；图像含糊或不能唯一确定的音乐内容不得猜测。完整规则见 [错误后的自动对照校正](references/auto-correction.md)。
+
 `-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
 
 脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。自动识别回退保留原始和灰度两次 OMR、MXL、日志与罚分，不能把候选选择描述为音符准确率测量。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
@@ -44,8 +46,11 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 - `layoutValidation`：核验重新保存后的断点是否符合选定排版策略，失败返回退出码 5 / `failed_layout_validation`。这不代替全部校对页的视觉检查。
 - `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号、歌词及休止区间。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
 - `measureNumberValidation`：提供用户明确指定的已校正 MSCZ 时，核对实际小节序列、每小节时值、整小节静默、全部小节编号以及基准系统起点编号。结构不同先人工修复，再应用编号；只改可见编号不算修复。未提供基准时报告 `not_checked`。
+- `correctionWorklist`：草稿验证错误按类型去重，关联源页、校对页、声部和小节索引。Skill 必须先按工作单尝试有依据的自动校正并重新验证，不能把第一版错误草稿直接当作任务终点。
 - 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
 - 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。
 - 草稿模式报告 `editable_draft_needs_correction` 或 `editable_draft_ready_for_review`，保留所有检查错误且 `acceptancePassed=false`；它可以作为校正起点，不能称作成品。严格模式只有技术、已配置结构、播放音色和布局检查全部通过，才报告 `completed_needs_manual_review`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
 
 交付各组的 `score.mscz`、`score-proof.pdf`、可选 MIDI、MusicXML 和报告，注明对应源页。测试见 [tests/README.md](tests/README.md)。卸载只删除安装的 Skill 目录，不删除乐谱，也不卸载 Audiveris 或 MuseScore。
+
+

@@ -20,12 +20,14 @@
 
 另执行 skill-creator 的 `quick_validate.py` 和 PowerShell 语法检查。安装后需要在下一次对话确认 `$pdf-to-musescore` 出现在可用技能中；元数据校验不能替代真正的新回合发现测试。
 
+`test-correction.py` 包含 4 项工作单测试：无错误时不启动校正；小节／休止错误关联声部、小节、源页和校对页；基准时间线与播放错误保持为两个独立任务；汇总文字不会误识别为声部名称。工作单只组织证据，不能把模糊 PDF 自动转换成确定音符。
+
 ## 输出模式回归
 
 `run-selfcheck.py` 同时验证 `validated` 与 `draft`。删除最终小节或删除布局报告时，严格模式仍分别返回 3／5；草稿模式必须返回 0、`technicalValidation=passed`、`acceptancePassed=false` 和 `draft_with_validation_issues`，并保留具体错误。正常严格结果仍为 `passed`。
 # Playback regression
 
-Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 59. MIDI note pitches/ticks must remain unchanged after instrument assignment.
+Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 63. MIDI note pitches/ticks must remain unchanged after instrument assignment. `run-selfcheck.py` has seven integration cases, including verification of a corrected MSCZ through `-ScorePath` with an automatically regenerated proof PDF.
 
 Layout: run `python tests/test-layout.py` to verify physical break removal, section/nobreak preservation, source mode, no overwrite and rejection of reintroduced breaks. Real MuseScore tests must resave both reflow and source modes, check `layoutValidation`, and inspect every proof page; fewer pages alone is not success.
 
@@ -40,3 +42,4 @@ Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet e
 `test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
 
 真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。
+

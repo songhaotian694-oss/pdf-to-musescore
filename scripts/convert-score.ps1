@@ -21,7 +21,7 @@ param(
 )
 . "$PSScriptRoot/common.ps1"
 $dir = $null
-$report = [ordered]@{schemaVersion=5; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); referenceMscz=$null; referenceBaseline=$null; measureNumberValidation=$null; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
+$report = [ordered]@{schemaVersion=6; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); referenceMscz=$null; referenceBaseline=$null; measureNumberValidation=$null; correctionWorklist=$null; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
 try {
     $InputPdf = Assert-AbsolutePath $InputPdf
     if (-not $KeepIntermediate) { throw 'Intermediate files are required for correction; keep -KeepIntermediate true.' }
@@ -165,7 +165,7 @@ try {
     $omrFiles = @(Get-ChildItem -LiteralPath $omr -Recurse -Filter *.omr)
     if ($omrFiles.Count -eq 0) { $report.warnings += 'Audiveris did not save an OMR project; MusicXML and logs are retained.' }
     if (-not $m) { throw 'MuseScore is missing. MusicXML/OMR are retained in audiveris; install MuseScore Studio 4 and use the documented resume commands.' }
-    @{schemaVersion=5; startedUtc=$report.startedUtc; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$report.selectedRecognitionProfile; referenceMscz=$report.referenceMscz; referenceBaseline=$referenceBaseline; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
+    @{schemaVersion=6; startedUtc=$report.startedUtc; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$report.selectedRecognitionProfile; referenceMscz=$report.referenceMscz; referenceBaseline=$referenceBaseline; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
     $score = Join-Path $dir 'score.mscz'
     $imported = Join-Path $dir 'score-imported.mscz'
     $assigned = Join-Path $dir 'score-playback.mscz'
@@ -204,14 +204,22 @@ try {
     $psExe = (Get-Process -Id $PID).Path
     $verified = Invoke-ScoreProcess $psExe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/verify-output.ps1",'-RunDirectory',$dir,'-MuseScorePath',$m,'-PdfInfoPath',$pdf,'-PythonPath',$python,'-OutputMode',$OutputMode) 1200 $dir 'verification'
     if ($verified.stdout) { $report.verification = $verified.stdout | ConvertFrom-Json }
+    if ($report.verification) {
+        $report.contentValidation = $report.verification.contentValidation
+        if ($report.verification.savedContentValidation) { $report.measureNumberValidation = $report.verification.savedContentValidation.measureNumberValidation }
+        $verificationPath = Join-Path $dir 'verification.json'
+        $report.verification | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $verificationPath -Encoding UTF8
+        $worklistPath = Join-Path $dir 'correction-worklist.json'
+        $worklist = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-correction.py",'--verification',$verificationPath,'--selection',(Join-Path $dir 'selection.json'),'--output',$worklistPath) 60 $dir 'correction-worklist'
+        if ($worklist.exitCode -eq 0 -and $worklist.stdout) { $report.correctionWorklist = $worklist.stdout | ConvertFrom-Json }
+        else { $report.warnings += 'Could not build the correction worklist; inspect verification.json directly.' }
+    }
     if ($verified.exitCode -ne 0) {
         if ($verified.exitCode -eq 3) { $report.status = 'failed_content_validation' }
         if ($verified.exitCode -eq 4) { $report.status = 'failed_playback_validation' }
         if ($verified.exitCode -eq 5) { $report.status = 'failed_layout_validation' }
         throw 'Output verification failed; inspect verification.stdout.log and verification.stderr.log. Generated files are diagnostic drafts, not accepted deliverables.'
     }
-    $report.contentValidation = $report.verification.contentValidation
-    $report.measureNumberValidation = $report.verification.savedContentValidation.measureNumberValidation
     $report.warnings = @(@($report.warnings) + @($report.verification.warnings) | Select-Object -Unique)
     $report.draftUsable = $true
     if ($OutputMode -eq 'draft') {
@@ -230,3 +238,5 @@ if ($report.status -eq 'failed_content_validation') { exit 3 }
 if ($report.status -eq 'failed_playback_validation') { exit 4 }
 if ($report.status -eq 'failed_layout_validation') { exit 5 }
 if ($report.status -notin @('completed_needs_manual_review','editable_draft_ready_for_review','editable_draft_needs_correction')) { exit 1 }
+
+
