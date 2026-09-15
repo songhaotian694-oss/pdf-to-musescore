@@ -122,4 +122,3 @@ if ($result.status -eq 'failed_content_validation') { exit 3 }
 if ($result.status -eq 'failed_playback_validation') { exit 4 }
 if ($result.status -eq 'failed_layout_validation') { exit 5 }
 if ($result.status -notin @('passed','draft_with_validation_issues')) { exit 1 }
-

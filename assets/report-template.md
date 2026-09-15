@@ -25,4 +25,3 @@ Playback is a separate mandatory gate: `playback-assignment.json` records intend
 - Check repeats, endings, tempo, dynamics and playback.
 
 Successful file validation does not establish musical accuracy. Keep the original PDF, OMR and MusicXML for correction.
-

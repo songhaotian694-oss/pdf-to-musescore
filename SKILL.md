@@ -45,4 +45,3 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 - 草稿模式报告 `editable_draft_needs_correction` 或 `editable_draft_ready_for_review`，保留所有检查错误且 `acceptancePassed=false`；它可以作为校正起点，不能称作成品。严格模式只有技术、已配置结构、播放音色和布局检查全部通过，才报告 `completed_needs_manual_review`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
 
 交付各组的 `score.mscz`、`score-proof.pdf`、可选 MIDI、MusicXML 和报告，注明对应源页。测试见 [tests/README.md](tests/README.md)。卸载只删除安装的 Skill 目录，不删除乐谱，也不卸载 Audiveris 或 MuseScore。
-

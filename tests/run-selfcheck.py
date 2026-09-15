@@ -49,4 +49,3 @@ for case,mode,expected,expected_status in cases:
 (out/'results.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
 print(json.dumps(records,indent=2))
 raise SystemExit(0 if all(r['passed'] for r in records) else 1)
-

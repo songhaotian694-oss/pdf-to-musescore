@@ -164,4 +164,3 @@ if ($report.status -eq 'failed_content_validation') { exit 3 }
 if ($report.status -eq 'failed_playback_validation') { exit 4 }
 if ($report.status -eq 'failed_layout_validation') { exit 5 }
 if ($report.status -notin @('completed_needs_manual_review','editable_draft_ready_for_review','editable_draft_needs_correction')) { exit 1 }
-

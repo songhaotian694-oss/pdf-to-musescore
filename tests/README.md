@@ -40,4 +40,3 @@ Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet e
 `test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
 
 真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。
-

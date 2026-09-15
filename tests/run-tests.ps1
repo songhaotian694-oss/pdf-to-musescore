@@ -54,4 +54,3 @@ foreach ($case in $cases) {
 }
 $records | Select-Object test,passed,exitCode,seconds | Format-Table
 if (@($records | Where-Object { -not $_.passed }).Count) { exit 1 }
-

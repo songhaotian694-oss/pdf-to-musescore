@@ -26,4 +26,3 @@ scripts/convert-score.ps1 ... -OutputMode validated
 内容、播放或布局门禁失败时分别退出 3、4、5；只有所有已配置检查通过才返回 `completed_needs_manual_review`，并将 `acceptancePassed` 设为 true。即使通过，仍需人工逐页校对和试听。
 
 推荐流程是先用默认草稿模式取得 MSCZ，在副本中根据源 PDF 修正，再对修正后的新运行使用严格模式或重新执行验证。不要修改预期值迎合错误 OMR，也不要把 `editable_draft_*` 状态描述为成品或验收通过。
-
