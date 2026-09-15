@@ -372,9 +372,29 @@ def check_music(details, group):
     return errors, warnings
 
 
+def quality_penalty(details, group, errors):
+    """Rank OMR attempts conservatively; zero never replaces formal validation."""
+    parts = details['parts']
+    components = {'validationErrors': len(errors) * 10000,
+                  'partDifference': abs(len(parts) - group['expectedParts']) * 100000,
+                  'measureDifference': 0, 'unexpectedClefs': 0,
+                  'missingNotes': 100000 if not details['notes'] else 0}
+    expected = group.get('expectedMeasuresPerPart')
+    if expected is not None:
+        components['measureDifference'] = sum(abs(part['measures'] - count)
+                                              for part, count in zip(parts, expected)) * 100
+        components['measureDifference'] += abs(len(parts) - len(expected)) * 10000
+    clefs = group.get('allowedClefsPerPart')
+    if clefs is not None:
+        components['unexpectedClefs'] = sum(len(set(part['clefs']) - set(allowed))
+                                             for part, allowed in zip(parts, clefs)) * 1000
+    return sum(components.values()), components
+
+
 def validate_content(xml, selection, proof=None, out=None):
     data = music_details(xml)
     errors, warnings = check_music(data, selection['group'])
+    penalty, components = quality_penalty(data, selection['group'], errors)
     pages = []
     if proof is not None:
         pages = analyze(proof, out / 'proof-thumbnails')
@@ -383,8 +403,9 @@ def validate_content(xml, selection, proof=None, out=None):
                 errors.append(f"Proof page {page['page']} is nearly blank (ink={page['inkCoverage']}, staves=0).")
             elif page['staffCount'] == 0:
                 errors.append(f"Proof page {page['page']} has no detected five-line staves; inspect manually before accepting.")
-    return {'schemaVersion': 2, 'status': 'failed_content_validation' if errors else 'passed_checked_structure',
+    return {'schemaVersion': 3, 'status': 'failed_content_validation' if errors else 'passed_checked_structure',
             'errors': errors, 'warnings': warnings, 'musicXml': data, 'proofPages': pages,
+            'qualityPenalty': penalty, 'qualityComponents': components,
             'scope': 'Reviewed part/measure/clef/lyric/rest-span expectations, explicit empty bars and whole-measure rest durations, all-page blank/staff heuristics; not full rhythmic/musical accuracy or text-overlap validation.'}
 
 

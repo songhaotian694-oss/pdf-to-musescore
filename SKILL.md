@@ -17,11 +17,13 @@ description: Convert printed sheet-music PDFs into editable MuseScore scores usi
 
 ## 分组转换
 
-运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。默认 `-OutputMode draft`：有内容、播放或布局疑点时继续生成明确标记的可编辑草稿；技术上无法生成／重开文件时才停止。需要门禁全部通过后才输出时使用 `-OutputMode validated`。两种模式、状态和退出码见 [草稿与严格验收](references/output-modes.md)。
+运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。默认 `-RecognitionProfile auto`：先识别原始 PDF，结构检查失败时自动尝试 400 DPI 灰度输入，并按已复核结构选择问题更少的候选；无需让用户理解或选择 Audiveris 参数。详见 [自动提高识别质量](references/recognition-quality.md)。
+
+默认 `-OutputMode draft`：有内容、播放或布局疑点时继续生成明确标记的可编辑草稿；技术上无法生成／重开文件时才停止。需要门禁全部通过后才输出时使用 `-OutputMode validated`。两种模式、状态和退出码见 [草稿与严格验收](references/output-modes.md)。
 
 `-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
 
-脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
+脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。自动识别回退保留原始和灰度两次 OMR、MXL、日志与罚分，不能把候选选择描述为音符准确率测量。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
 
 CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](references/musescore-cli.md)、[排查指南](references/troubleshooting.md)。多个 MXL 仍返回 `needs_selection`，列出全部候选，不默默取第一个。
 

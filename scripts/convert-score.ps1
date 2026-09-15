@@ -14,12 +14,13 @@ param(
     [string]$GroupId,
     [string]$PythonPath,
     [ValidateSet('draft','validated')][string]$OutputMode = 'draft',
+    [ValidateSet('auto','original')][string]$RecognitionProfile = 'auto',
     [ValidateSet('reflow','source')][string]$LayoutMode = 'reflow',
     [ValidateRange(30,7200)][int]$TimeoutSeconds = 1800
 )
 . "$PSScriptRoot/common.ps1"
 $dir = $null
-$report = [ordered]@{schemaVersion=3; status='failed'; outputMode=$OutputMode; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
+$report = [ordered]@{schemaVersion=4; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
 try {
     $InputPdf = Assert-AbsolutePath $InputPdf
     if (-not $KeepIntermediate) { throw 'Intermediate files are required for correction; keep -KeepIntermediate true.' }
@@ -67,27 +68,74 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $TessdataDirectory 'eng.traineddata'))) { throw 'Configured Tesseract data directory has no eng.traineddata.' }
         $childEnv.TESSDATA_PREFIX = $TessdataDirectory
     }
-    $result = Invoke-ScoreProcess $a @('-batch','-transcribe','-export','-save','-output',$omr,'--',$omrInput) $TimeoutSeconds $dir 'audiveris' $childEnv
-    if ($result.exitCode -ne 0) { throw "Audiveris failed (exit $($result.exitCode), timeout=$($result.timedOut)); inspect audiveris.stdout.log and audiveris.stderr.log. Intermediate files retained." }
-    if (($result.stdout + $result.stderr) -match 'Could not initialize TessBaseAPI|couldn.t load any languages|No installed OCR languages|No OCR is available') {
-        $report.warnings += 'Text OCR unavailable: titles and lyrics may be missing. Install legacy-compatible tesseract-ocr/tessdata language data and retry if text matters.'
-    }
-    $xmls = @(Get-ChildItem -LiteralPath $omr -Recurse -File | Where-Object { $_.Extension -in @('.mxl','.musicxml') })
-    if ($xmls.Count -eq 0) { throw 'Audiveris produced no MXL/MusicXML. Check that the PDF contains clear printed staves; inspect retained OMR/logs.' }
-    foreach ($xml in $xmls) {
-        try { $report.candidates += Get-MusicXmlDetails $xml.FullName }
-        catch {
-            $report.candidates += @{path=$xml.FullName; bytes=$xml.Length; validationError=$_.Exception.Message}
-            if ($xmls.Count -eq 1) { throw }
+    $runRecognition = {
+        param([string]$Profile, [string]$RecognitionInput)
+        $attemptDir = Join-Path $omr $Profile
+        [void][IO.Directory]::CreateDirectory($attemptDir)
+        $run = Invoke-ScoreProcess $a @('-batch','-transcribe','-export','-save','-output',$attemptDir,'--',$RecognitionInput) $TimeoutSeconds $dir ("audiveris-$Profile") $childEnv
+        $attempt = [ordered]@{profile=$Profile; input=$RecognitionInput; outputDirectory=$attemptDir; exitCode=$run.exitCode; timedOut=$run.timedOut; status='failed'; musicXml=$null; qualityPenalty=$null; errors=@()}
+        if (($run.stdout + $run.stderr) -match 'Could not initialize TessBaseAPI|couldn.t load any languages|No installed OCR languages|No OCR is available') {
+            $report.warnings += "Text OCR unavailable in $Profile attempt: titles and lyrics may be missing."
         }
+        if ($run.exitCode -ne 0) {
+            $attempt.errors += "Audiveris exit $($run.exitCode), timeout=$($run.timedOut)."
+            return [pscustomobject]@{attempt=$attempt; xmls=@(); contentProcess=$null; content=$null}
+        }
+        $xmls = @(Get-ChildItem -LiteralPath $attemptDir -Recurse -File | Where-Object { $_.Extension -in @('.mxl','.musicxml') })
+        if ($xmls.Count -eq 0) {
+            $attempt.errors += 'Audiveris produced no MXL/MusicXML.'
+            return [pscustomobject]@{attempt=$attempt; xmls=@(); contentProcess=$null; content=$null}
+        }
+        foreach ($candidateXml in $xmls) {
+            try {
+                $details = Get-MusicXmlDetails $candidateXml.FullName
+                $details | Add-Member -NotePropertyName recognitionProfile -NotePropertyValue $Profile
+                $report.candidates += $details
+            } catch { $report.candidates += @{path=$candidateXml.FullName; bytes=$candidateXml.Length; recognitionProfile=$Profile; validationError=$_.Exception.Message} }
+        }
+        if ($xmls.Count -gt 1) {
+            $attempt.status = 'multiple_outputs'
+            $attempt.errors += 'Multiple MusicXML outputs require movement selection.'
+            return [pscustomobject]@{attempt=$attempt; xmls=$xmls; contentProcess=$null; content=$null}
+        }
+        $candidateOut = Join-Path $dir ("candidate-$Profile")
+        [void][IO.Directory]::CreateDirectory($candidateOut)
+        $checked = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$xmls[0].FullName,'--selection',(Join-Path $dir 'selection.json'),'--out',$candidateOut) 60 $dir ("content-$Profile")
+        $contentJson = if ($checked.stdout) { $checked.stdout | ConvertFrom-Json } else { $null }
+        $attempt.musicXml = $xmls[0].FullName
+        $attempt.status = if ($checked.exitCode -eq 0) { 'passed_checked_structure' } elseif ($checked.exitCode -eq 3) { 'failed_content_validation' } else { 'failed_inspection' }
+        if ($contentJson -and $contentJson.PSObject.Properties['qualityPenalty']) { $attempt.qualityPenalty = [int64]$contentJson.qualityPenalty }
+        if ($contentJson -and $contentJson.errors) { $attempt.errors += @($contentJson.errors) }
+        return [pscustomobject]@{attempt=$attempt; xmls=$xmls; contentProcess=$checked; content=$contentJson}
     }
-    if ($xmls.Count -gt 1) {
+    $original = & $runRecognition 'original' $omrInput
+    $report.recognitionAttempts += $original.attempt
+    if ($original.attempt.status -eq 'multiple_outputs') {
         $report.status = 'needs_selection'
-        throw 'Multiple MusicXML outputs: review candidates in report.json (size, title, parts, measures and page breaks) and ask the user which movements to convert. Nothing was silently selected.'
+        throw 'Audiveris produced multiple movements. Review candidates in report.json; nothing was silently selected.'
     }
-    $xml = $xmls[0].FullName
-    $content = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$xml,'--selection',(Join-Path $dir 'selection.json'),'--out',$dir) 60 $dir 'content-musicxml'
-    if ($content.stdout) { $report.contentValidation = $content.stdout | ConvertFrom-Json }
+    $chosen = if ($original.xmls.Count -eq 1 -and $original.contentProcess.exitCode -in @(0,3)) { $original } else { $null }
+    if ($RecognitionProfile -eq 'auto' -and (-not $chosen -or $chosen.contentProcess.exitCode -eq 3)) {
+        $preparedInput = Join-Path $dir 'omr-input-grayscale-400.pdf'
+        $preprocess = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/prepare-omr-input.py",'--input',$omrInput,'--output',$preparedInput,'--report',(Join-Path $dir 'omr-input-grayscale-400.json'),'--dpi','400') 600 $dir 'omr-input-grayscale-400'
+        if ($preprocess.exitCode -eq 0 -and (Test-Path -LiteralPath $preparedInput)) {
+            $fallback = & $runRecognition 'grayscale-400' $preparedInput
+            $report.recognitionAttempts += $fallback.attempt
+            if ($fallback.attempt.status -eq 'multiple_outputs') {
+                $report.warnings += 'Grayscale fallback produced multiple movements and was not selected automatically.'
+            } elseif ($fallback.xmls.Count -eq 1 -and $fallback.contentProcess.exitCode -in @(0,3)) {
+                if (-not $chosen -or $fallback.contentProcess.exitCode -eq 0 -or
+                    ($chosen.contentProcess.exitCode -eq 3 -and $fallback.attempt.qualityPenalty -lt $chosen.attempt.qualityPenalty)) { $chosen = $fallback }
+            }
+        } else { $report.warnings += 'Automatic grayscale fallback could not be prepared; original diagnostics were retained.' }
+    }
+    if (-not $chosen) { throw 'Audiveris produced no parseable single MusicXML candidate in either recognition attempt. Inspect retained OMR and logs.' }
+    $xml = $chosen.xmls[0].FullName
+    $content = $chosen.contentProcess
+    $report.contentValidation = $chosen.content
+    $report.selectedRecognitionProfile = $chosen.attempt.profile
+    $report.contentValidation | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $dir 'content-musicxml.json') -Encoding UTF8
+    $report.warnings += "Selected OMR attempt: $($chosen.attempt.profile). Candidate choice uses reviewed structure only, not note accuracy."
     if ($content.exitCode -ne 0) {
         if ($content.exitCode -ne 3) { throw "MusicXML content inspection failed; the draft cannot safely continue. See content-musicxml logs: $($content.stdout) $($content.stderr)" }
         if ($OutputMode -eq 'validated') {
@@ -100,7 +148,7 @@ try {
     $omrFiles = @(Get-ChildItem -LiteralPath $omr -Recurse -Filter *.omr)
     if ($omrFiles.Count -eq 0) { $report.warnings += 'Audiveris did not save an OMR project; MusicXML and logs are retained.' }
     if (-not $m) { throw 'MuseScore is missing. MusicXML/OMR are retained in audiveris; install MuseScore Studio 4 and use the documented resume commands.' }
-    @{schemaVersion=3; startedUtc=$report.startedUtc; outputMode=$OutputMode; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
+    @{schemaVersion=4; startedUtc=$report.startedUtc; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$report.selectedRecognitionProfile; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
     $score = Join-Path $dir 'score.mscz'
     $imported = Join-Path $dir 'score-imported.mscz'
     $assigned = Join-Path $dir 'score-playback.mscz'

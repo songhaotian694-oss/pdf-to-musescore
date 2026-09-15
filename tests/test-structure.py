@@ -3,9 +3,12 @@ import copy
 import importlib.util
 import unittest
 from pathlib import Path
+import tempfile
 
 spec=importlib.util.spec_from_file_location('structure',Path(__file__).resolve().parents[1]/'scripts/score-structure.py')
 s=importlib.util.module_from_spec(spec); spec.loader.exec_module(s)
+preprocess_spec=importlib.util.spec_from_file_location('preprocess',Path(__file__).resolve().parents[1]/'scripts/prepare-omr-input.py')
+preprocess=importlib.util.module_from_spec(preprocess_spec); preprocess_spec.loader.exec_module(preprocess)
 
 class Gates(unittest.TestCase):
     def setUp(self):
@@ -53,5 +56,23 @@ class Gates(unittest.TestCase):
         from PIL import Image
         f=s.staff_features(Image.fromarray(np.full((1600,1200),255,dtype=np.uint8)))
         self.assertEqual(f['staffCount'],0); self.assertEqual(f['inkCoverage'],0)
+    def test_quality_penalty_prefers_closer_measure_count(self):
+        close=copy.deepcopy(self.music); close['parts'][0]['measures']=27
+        far=copy.deepcopy(self.music); far['parts'][0]['measures']=10
+        close_errors=s.check_music(close,self.group)[0]
+        far_errors=s.check_music(far,self.group)[0]
+        self.assertLess(s.quality_penalty(close,self.group,close_errors)[0],
+                        s.quality_penalty(far,self.group,far_errors)[0])
+    def test_grayscale_fallback_preserves_page_count(self):
+        from PIL import Image
+        from pypdf import PdfReader
+        with tempfile.TemporaryDirectory() as directory:
+            directory=Path(directory); source=directory/'source.pdf'; output=directory/'output.pdf'
+            pages=[Image.new('RGB',(160,220),'white'),Image.new('RGB',(160,220),'white')]
+            pages[0].save(source,'PDF',save_all=True,append_images=pages[1:],resolution=72)
+            report=preprocess.convert(source,output,300)
+            self.assertEqual(report['profile'],'grayscale-300')
+            self.assertEqual(len(PdfReader(output).pages),2)
+            with self.assertRaises(FileExistsError): preprocess.convert(source,output,300)
 
 if __name__=='__main__': unittest.main(verbosity=2)
