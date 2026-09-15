@@ -13,12 +13,13 @@ param(
     [string]$SelectionPlan,
     [string]$GroupId,
     [string]$PythonPath,
+    [ValidateSet('draft','validated')][string]$OutputMode = 'draft',
     [ValidateSet('reflow','source')][string]$LayoutMode = 'reflow',
     [ValidateRange(30,7200)][int]$TimeoutSeconds = 1800
 )
 . "$PSScriptRoot/common.ps1"
 $dir = $null
-$report = [ordered]@{schemaVersion=2; status='failed'; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; verification=$null}
+$report = [ordered]@{schemaVersion=3; status='failed'; outputMode=$OutputMode; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
 try {
     $InputPdf = Assert-AbsolutePath $InputPdf
     if (-not $KeepIntermediate) { throw 'Intermediate files are required for correction; keep -KeepIntermediate true.' }
@@ -88,31 +89,47 @@ try {
     $content = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$xml,'--selection',(Join-Path $dir 'selection.json'),'--out',$dir) 60 $dir 'content-musicxml'
     if ($content.stdout) { $report.contentValidation = $content.stdout | ConvertFrom-Json }
     if ($content.exitCode -ne 0) {
-        $report.status = 'failed_content_validation'
-        throw "MusicXML structure gate blocked final exports. See content-musicxml.json/stdout.log: $($content.stdout)"
+        if ($content.exitCode -ne 3) { throw "MusicXML content inspection failed; the draft cannot safely continue. See content-musicxml logs: $($content.stdout) $($content.stderr)" }
+        if ($OutputMode -eq 'validated') {
+            $report.status = 'failed_content_validation'
+            throw "MusicXML structure gate blocked validated exports. See content-musicxml.json/stdout.log: $($content.stdout)"
+        }
+        $report.warnings += 'Draft mode: recognized MusicXML has content-validation errors. A correction draft will still be generated; see content-musicxml.json.'
     }
     $report.warnings += @($report.contentValidation.warnings)
     $omrFiles = @(Get-ChildItem -LiteralPath $omr -Recurse -Filter *.omr)
     if ($omrFiles.Count -eq 0) { $report.warnings += 'Audiveris did not save an OMR project; MusicXML and logs are retained.' }
     if (-not $m) { throw 'MuseScore is missing. MusicXML/OMR are retained in audiveris; install MuseScore Studio 4 and use the documented resume commands.' }
-    @{schemaVersion=2; startedUtc=$report.startedUtc; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
+    @{schemaVersion=3; startedUtc=$report.startedUtc; outputMode=$OutputMode; inputPdf=$InputPdf; inputPages=$inputInfo.pages; sourceSha256=$selection.sourceSha256; sourcePages=$selection.sourcePages; selection=(Join-Path $dir 'selection.json'); musicXml=$xml; layoutMode=$LayoutMode; exportMidi=[bool]$ExportMidi} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dir 'run.json') -Encoding UTF8
     $score = Join-Path $dir 'score.mscz'
     $imported = Join-Path $dir 'score-imported.mscz'
     $assigned = Join-Path $dir 'score-playback.mscz'
     $result = Invoke-ScoreProcess $m @('-o',$imported,$xml) 300 $dir 'musescore-import'
     if ($result.exitCode -ne 0 -or -not (Test-Path -LiteralPath $imported)) { throw 'MuseScore import failed; inspect musescore-import logs.' }
     $assignment = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-playback.py",'apply','--score',$imported,'--selection',(Join-Path $dir 'selection.json'),'--output',$assigned,'--report',(Join-Path $dir 'playback-assignment.json')) 60 $dir 'playback-assignment'
+    if ($assignment.stdout) { $report.playbackAssignment = $assignment.stdout | ConvertFrom-Json }
+    $layoutInput = $assigned
     if ($assignment.exitCode -ne 0) {
-        $report.status = 'failed_playback_validation'
-        throw "Playback assignment blocked final exports: $($assignment.stdout) $($assignment.stderr)"
+        if ($OutputMode -eq 'validated') {
+            $report.status = 'failed_playback_validation'
+            throw "Playback assignment blocked validated exports: $($assignment.stdout) $($assignment.stderr)"
+        }
+        $layoutInput = $imported
+        $report.warnings += 'Draft mode: playback assignment failed. The MSCZ uses the imported playback setup and requires correction; see playback-assignment.json.'
     }
     $laidOut = Join-Path $dir 'score-layout.mscz'
-    $layout = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-layout.py",'apply','--score',$assigned,'--output',$laidOut,'--mode',$LayoutMode,'--report',(Join-Path $dir 'layout-assignment.json')) 60 $dir 'layout-assignment'
+    $layout = Invoke-ScoreProcess $python @('-X','utf8',"$PSScriptRoot/score-layout.py",'apply','--score',$layoutInput,'--output',$laidOut,'--mode',$LayoutMode,'--report',(Join-Path $dir 'layout-assignment.json')) 60 $dir 'layout-assignment'
+    if ($layout.stdout) { $report.layoutAssignment = $layout.stdout | ConvertFrom-Json }
+    $finalInput = $laidOut
     if ($layout.exitCode -ne 0) {
-        $report.status = 'failed_layout_validation'
-        throw "Layout preparation failed: $($layout.stdout) $($layout.stderr)"
+        if ($OutputMode -eq 'validated') {
+            $report.status = 'failed_layout_validation'
+            throw "Layout preparation blocked validated exports: $($layout.stdout) $($layout.stderr)"
+        }
+        $finalInput = $layoutInput
+        $report.warnings += 'Draft mode: layout preparation failed. The MSCZ keeps the preceding layout and requires correction; see layout-assignment.json.'
     }
-    $steps = @(@{label='musescore-save-playback'; input=$laidOut; output=$score}, @{label='musescore-proof'; input=$score; output=(Join-Path $dir 'score-proof.pdf')})
+    $steps = @(@{label='musescore-save-playback'; input=$finalInput; output=$score}, @{label='musescore-proof'; input=$score; output=(Join-Path $dir 'score-proof.pdf')})
     if ($ExportMidi) { $steps += @{label='musescore-midi'; input=$score; output=(Join-Path $dir 'score.mid')} }
     foreach ($step in $steps) {
         $result = Invoke-ScoreProcess $m @('-o',$step.output,$step.input) 300 $dir $step.label
@@ -120,7 +137,7 @@ try {
     }
     # Invoke verifier in a child PowerShell so its exit cannot terminate report generation.
     $psExe = (Get-Process -Id $PID).Path
-    $verified = Invoke-ScoreProcess $psExe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/verify-output.ps1",'-RunDirectory',$dir,'-MuseScorePath',$m,'-PdfInfoPath',$pdf,'-PythonPath',$python) 1200 $dir 'verification'
+    $verified = Invoke-ScoreProcess $psExe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"$PSScriptRoot/verify-output.ps1",'-RunDirectory',$dir,'-MuseScorePath',$m,'-PdfInfoPath',$pdf,'-PythonPath',$python,'-OutputMode',$OutputMode) 1200 $dir 'verification'
     if ($verified.stdout) { $report.verification = $verified.stdout | ConvertFrom-Json }
     if ($verified.exitCode -ne 0) {
         if ($verified.exitCode -eq 3) { $report.status = 'failed_content_validation' }
@@ -130,7 +147,13 @@ try {
     }
     $report.contentValidation = $report.verification.contentValidation
     $report.warnings = @(@($report.warnings) + @($report.verification.warnings) | Select-Object -Unique)
-    $report.status = 'completed_needs_manual_review'
+    $report.draftUsable = $true
+    if ($OutputMode -eq 'draft') {
+        $report.status = if ($report.verification.status -eq 'draft_with_validation_issues') { 'editable_draft_needs_correction' } else { 'editable_draft_ready_for_review' }
+    } else {
+        $report.acceptancePassed = $true
+        $report.status = 'completed_needs_manual_review'
+    }
     if ($OpenInMuseScore) { Start-Process -FilePath $m -ArgumentList ('"' + $score + '"') | Out-Null }
 } catch { $report.error = $_.Exception.Message }
 $report.finishedUtc = [datetime]::UtcNow.ToString('o')
@@ -140,4 +163,5 @@ if ($report.status -eq 'needs_selection') { exit 2 }
 if ($report.status -eq 'failed_content_validation') { exit 3 }
 if ($report.status -eq 'failed_playback_validation') { exit 4 }
 if ($report.status -eq 'failed_layout_validation') { exit 5 }
-if ($report.status -ne 'completed_needs_manual_review') { exit 1 }
+if ($report.status -notin @('completed_needs_manual_review','editable_draft_ready_for_review','editable_draft_needs_correction')) { exit 1 }
+

@@ -6,7 +6,7 @@ Source PDF: {{INPUT}}
 
 Error / action needed: {{ERROR}}
 
-See `report.json` for separate technical and content validation. `preflight.json` and `source-thumbnails/` cover ALL source pages. `selection.json` records source SHA256 and selected pages. `content-musicxml.json` checks per-part expectations; `structure-verify-*/content-proof.json` and thumbnails check ALL proof pages. Failed content validation leaves diagnostic files, not accepted deliverables.
+See `report.json` for `outputMode`, `draftUsable`, `acceptancePassed`, and separate technical/content/playback/layout results. `editable_draft_*` means `score.mscz` is a correction draft, never an accepted result. `preflight.json` and `source-thumbnails/` cover ALL source pages. `selection.json` records source SHA256 and selected pages. `content-musicxml.json` checks per-part expectations; `structure-verify-*/content-proof.json` and thumbnails check ALL proof pages.
 
 `conversion.log` records commands, exit codes and durations. Separate stdout/stderr logs can contain score text and local paths; review before sharing.
 
@@ -25,3 +25,4 @@ Playback is a separate mandatory gate: `playback-assignment.json` records intend
 - Check repeats, endings, tempo, dynamics and playback.
 
 Successful file validation does not establish musical accuracy. Keep the original PDF, OMR and MusicXML for correction.
+

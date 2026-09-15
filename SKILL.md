@@ -17,7 +17,9 @@ description: Convert printed sheet-music PDFs into editable MuseScore scores usi
 
 ## 分组转换
 
-运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。`-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
+运行 `scripts/convert-score.ps1 -InputPdf <源PDF> -OutputDirectory <父目录> -SelectionPlan <已核对JSON> -GroupId full-score`。默认 `-OutputMode draft`：有内容、播放或布局疑点时继续生成明确标记的可编辑草稿；技术上无法生成／重开文件时才停止。需要门禁全部通过后才输出时使用 `-OutputMode validated`。两种模式、状态和退出码见 [草稿与严格验收](references/output-modes.md)。
+
+`-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
 
 脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
 
@@ -40,6 +42,7 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 - `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号、歌词及休止区间。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
 - 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
 - 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。
-- 只有技术、已配置结构与播放音色检查全部通过，才报告 `completed_needs_manual_review`，不用无条件的 `completed`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
+- 草稿模式报告 `editable_draft_needs_correction` 或 `editable_draft_ready_for_review`，保留所有检查错误且 `acceptancePassed=false`；它可以作为校正起点，不能称作成品。严格模式只有技术、已配置结构、播放音色和布局检查全部通过，才报告 `completed_needs_manual_review`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
 
 交付各组的 `score.mscz`、`score-proof.pdf`、可选 MIDI、MusicXML 和报告，注明对应源页。测试见 [tests/README.md](tests/README.md)。卸载只删除安装的 Skill 目录，不删除乐谱，也不卸载 Audiveris 或 MuseScore。
+

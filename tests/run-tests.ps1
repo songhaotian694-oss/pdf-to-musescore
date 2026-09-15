@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$FixtureDirectory, [Parameter(Mandatory)][string]$ResultsDirectory, [string]$MuseScorePath, [string]$PdfInfoPath, [string[]]$TestName)
+param([string]$FixtureDirectory='D:\app\skill\build\中文 测试谱', [string]$ResultsDirectory='D:\app\skill\build\acceptance', [string]$MuseScorePath, [string]$PdfInfoPath, [string[]]$TestName)
 . "$PSScriptRoot/../scripts/common.ps1"
 $psExe = (Get-Process -Id $PID).Path
 $converter = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../scripts/convert-score.ps1'))
@@ -23,7 +23,8 @@ if ($TestName) {
     $cases = @($cases | Where-Object { $_.name -in $TestName })
 }
 foreach ($case in $cases) {
-    $params = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$converter,'-InputPdf',(Join-Path $FixtureDirectory $case.file),'-OutputDirectory',$ResultsDirectory) + $case.extra
+    # This acceptance suite exercises the strict gate explicitly. Interactive use defaults to draft.
+    $params = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$converter,'-InputPdf',(Join-Path $FixtureDirectory $case.file),'-OutputDirectory',$ResultsDirectory,'-OutputMode','validated') + $case.extra
     # Expectations are from our original fixture generator, not from OMR output.
     if ($case.file -notin @('invalid.pdf','text-only.pdf')) {
         $pages = @(if ($case.file -eq 'two-page-piano.pdf') { 1; 2 } else { 1 })
@@ -53,3 +54,4 @@ foreach ($case in $cases) {
 }
 $records | Select-Object test,passed,exitCode,seconds | Format-Table
 if (@($records | Where-Object { -not $_.passed }).Count) { exit 1 }
+

@@ -15,7 +15,9 @@
 
 首次调用 `scripts/convert-score.ps1 -InputPdf <PDF绝对路径> -OutputDirectory <输出父目录绝对路径>`，生成全页缩略图和预检报告。助手核对全部源页，按 [页组计划](references/page-selection.md) 准备选择计划；总谱和独立分谱不能串接。
 
-随后传入 `-SelectionPlan <计划绝对路径> -GroupId <组名>` 执行转换。`-ExportMidi` 可选，音色验证始终执行。默认 `-LayoutMode reflow` 清理导入副本的硬换行／分页；要求保留源断点时选 `source`。
+随后传入 `-SelectionPlan <计划绝对路径> -GroupId <组名>` 执行转换。默认 `-OutputMode draft`，即使内容、音色或布局检查发现问题，也尽量输出明确标记的可编辑 MSCZ 草稿；技术上无法生成或重开文件才停止。需要所有门禁通过后才输出时使用 `-OutputMode validated`。详见 [输出模式](references/output-modes.md)。
+
+`-ExportMidi` 可选，音色验证始终执行。默认 `-LayoutMode reflow` 清理导入副本的硬换行／分页；要求保留源断点时选 `source`。
 
 每次创建新输出目录，保留原件及中间结果。输出包括 MSCZ、校对 PDF、可选 MIDI、原始 MusicXML 与验证报告。
 
@@ -37,3 +39,4 @@ python tests/test-rests.py
 ```
 
 当前共 55 项单元测试。真实应用集成测试需要另行生成原创测试谱并安装上述依赖；见 [tests](tests/README.md)。仓库不包含用户乐谱、本机配置、应用安装包或历史转换输出。
+

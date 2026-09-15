@@ -19,6 +19,10 @@
 每次测试结果保存到构建目录的 `test-results.json`，含命令参数、退出码、输出文件大小、验证结果和人工检查项。fixture、源 PDF、运行日志、报告一同保留。测试通过只证明转换流程和失败行为，不证明识别音符准确；比较源谱和校对谱查看 OMR 限制。
 
 另执行 skill-creator 的 `quick_validate.py` 和 PowerShell 语法检查。安装后需要在下一次对话确认 `$pdf-to-musescore` 出现在可用技能中；元数据校验不能替代真正的新回合发现测试。
+
+## 输出模式回归
+
+`run-selfcheck.py` 同时验证 `validated` 与 `draft`。删除最终小节或删除布局报告时，严格模式仍分别返回 3／5；草稿模式必须返回 0、`technicalValidation=passed`、`acceptancePassed=false` 和 `draft_with_validation_issues`，并保留具体错误。正常严格结果仍为 `passed`。
 # Playback regression
 
 Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; with rest checks the full unit total is 55. MIDI note pitches/ticks must remain unchanged after instrument assignment.
@@ -36,3 +40,4 @@ Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet e
 `test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
 
 真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。
+
