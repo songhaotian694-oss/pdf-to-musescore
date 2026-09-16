@@ -16,6 +16,10 @@ scripts/convert-score.ps1 ... -ReferenceMscz <已校正MSCZ绝对路径>
 
 原始和灰度 OMR 候选都会与基准时间线比较，差异计入 `qualityPenalty`。最终 MSCZ 重新打开并导出 MusicXML 后再次检查，结果写入 `measureNumberValidation`。草稿模式保留差异并继续输出；严格模式按内容错误退出 3。
 
-这里的“编号基准”不表示可以只修改屏幕上显示的小节号。实际小节数量、时值或休止不一致时，必须先人工修正音乐结构，再重新验证。脚本不会根据基准复制音符、自动补删小节或伪造休止。
+最终 MSCZ 还会直接解包扫描 `score.mscx` 的所有 Staff。非零 `<noOffset>`、手工 `<MeasureNumber>` 和任何 `measureNumberMode` 覆盖会返回 `numbering_compensation_detected`，即使渲染后的行首编号与基准看起来一致也不能通过。
+
+这里的“编号基准”不表示可以只修改屏幕上显示的小节号。实际小节数量、时值或休止不一致时，必须先修复第一个漂移点的实体结构，删除全部编号补偿，再重新验证。脚本不会根据基准复制音符、自动补删小节或伪造休止。
 
 未提供 `-ReferenceMscz` 时，该项明确报告 `not_checked`。普通参考文件、未经校正的 MSCZ 或来源不明的工程不能自动视为权威。
+
+

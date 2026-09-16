@@ -19,6 +19,7 @@ cases=[('normal','validated',0,'passed'),
        ('wrong-layout-mode','validated',5,'failed_layout_validation'),
        ('missing-final-measure-draft','draft',0,'draft_with_validation_issues'),
        ('missing-layout-report-draft','draft',0,'draft_with_validation_issues'),
+       ('numbering-compensation','validated',3,'failed_content_validation'),
        ('corrected-score','validated',0,'passed')]
 for case,mode,expected,expected_status in cases:
     d=out/case;d.mkdir()
@@ -38,6 +39,15 @@ for case,mode,expected,expected_status in cases:
                     for staff in root.findall('./Score/Staff'):staff.remove(staff.findall('Measure')[-1])
                     data=ET.tostring(root,encoding='utf-8',xml_declaration=True)
                 z.writestr(e,data)
+    if case=='numbering-compensation':
+        with zipfile.ZipFile(d/'score.mscz') as z:entries=[(e,z.read(e.filename)) for e in z.infolist()]
+        with zipfile.ZipFile(d/'score.mscz','w') as z:
+            for e,data in entries:
+                if e.filename.endswith('.mscx') and '/' not in e.filename:
+                    root=ET.fromstring(data);measure=root.find('./Score/Staff/Measure')
+                    ET.SubElement(measure,'noOffset').text='1'
+                    data=ET.tostring(root,encoding='utf-8',xml_declaration=True)
+                z.writestr(e,data)
     command=['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(Path(__file__).parents[1]/'scripts/verify-output.ps1'),'-RunDirectory',str(d),'-OutputMode',mode]
     corrected=None
     if case=='corrected-score':
@@ -53,6 +63,8 @@ for case,mode,expected,expected_status in cases:
         passed=passed and len(result['errors'])==len(set(result['errors']))
     if corrected:
         passed=passed and Path(result['verifiedScore'])==corrected and Path(result['proofPdf']).name.startswith('correction-proof-')
+    if case=='numbering-compensation':
+        passed=passed and result['savedContentValidation']['measureNumberValidation']['status']=='numbering_compensation_detected'
     records.append({'case':case,'mode':mode,'expectedExit':expected,'exitCode':proc.returncode,'passed':passed,'status':result['status'],'errors':result['errors']})
 (out/'results.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
 print(json.dumps(records,indent=2))

@@ -12,6 +12,8 @@ See `report.json` for `outputMode`, `draftUsable`, `acceptancePassed`, and separ
 
 When the user explicitly supplies a corrected reference MSCZ, `reference-baseline.json` records its hashes and measure timeline. `measureNumberValidation` compares the final reopened score with that baseline. `not_checked` means no corrected reference MSCZ was supplied.
 
+The final MSCZ is always scanned for numbering compensation. Any nonzero `noOffset`, manual `MeasureNumber`, or `measureNumberMode` override sets `measureNumberValidation.status` to `numbering_compensation_detected`; repair the actual measure/rest/duration structure and remove the override before acceptance.
+
 If validation finds issues, `correction-worklist.json` links each error to available source/proof pages, parts and measure indices. The assistant should attempt up to two evidence-based correction rounds on new copies before delivery; unresolved ambiguous notation remains explicitly listed.
 
 `conversion.log` records commands, exit codes and durations. Separate stdout/stderr logs can contain score text and local paths; review before sharing.

@@ -40,12 +40,24 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 
 导入后必须执行 [播放音色设置和 MIDI 核验](references/playback.md)。弦乐四重奏按源谱顺序设置 Violin、Violin、Viola、Cello，原始 MIDI 程序号为 40、40、41、42（GM 从 1 起显示为 41、41、42、43）。在页组计划中明确 `playbackInstruments`，不要把谱表名称当成音色已正确的证据。
 
+## 小节编号：禁止显示补偿
+
+最终 MSCZ 不得写入或保留任何用于补偿显示编号的机制，包括：
+
+- `<noOffset>` 的非零值；
+- 手工 `<MeasureNumber>` 文字覆盖；
+- 用 `measureNumberMode` 或隐藏小节号掩盖结构错误。
+
+发现上述内容时，`measureNumberValidation` 必须失败，状态为 `numbering_compensation_detected`。不得通过增加、修改或保留编号偏移来使行首编号“看起来正确”。
+
+禁止用小节编号偏移修复 OMR 错误。若编号漂移，定位第一个漂移点，比较其前后实际小节、时值及多小节休止展开；只修复该处的实体结构。无法唯一判断时，保留为待人工校对草稿，不交付“编号已修正”的 MSCZ。
+
 - `technicalValidation`：文件非空、新生成、MXL/XML 有效、MSCZ 再次读取、PDF 页数、可选 MIDI 头部。
 - `contentValidation`：按源谱计划逐声部检查小节数、声部数、允许谱号、歌词及连续整小节休止区间；定位未解决的空小节，检查整小节休止的起点及时值。渲染**全部校对页**，检查近乎空白页和缺少五线谱。严重问题返回退出码 3 / `failed_content_validation`，留下的文件是诊断结果，不是验收通过。
 - `playbackValidation`：设置导入后的乐器 ID、通道程序号与工程音源，再让 MuseScore 重新保存 MSCZ；从最终 MSCZ 新导出 MIDI，逐个发声音符核验实际程序号、bank 和声部通道。无论是否请求交付 MIDI 都执行；音色错误返回退出码 4 / `failed_playback_validation`。
 - `layoutValidation`：核验重新保存后的断点是否符合选定排版策略，失败返回退出码 5 / `failed_layout_validation`。这不代替全部校对页的视觉检查。
 - `savedContentValidation`：将最终 MSCZ 重新导出为 MusicXML，再次按源谱预期检查声部、小节、谱号、歌词及休止区间。不能只核对原始识别 MXL，因为它不能反映导入或后续修改后的成品。
-- `measureNumberValidation`：提供用户明确指定的已校正 MSCZ 时，核对实际小节序列、每小节时值、整小节静默、全部小节编号以及基准系统起点编号。结构不同先人工修复，再应用编号；只改可见编号不算修复。未提供基准时报告 `not_checked`。
+- `measureNumberValidation`：先扫描最终 `score.mscx` 的所有 Staff。任一 `<noOffset>` 非零、手工 `<MeasureNumber>` 或编号模式覆盖都视为失败。必须先修复实际小节结构：多余的隐藏小节、重复小节、错误的多小节休止跨度或时值；结构与基准一致后，删除所有编号补偿，再重新渲染核对每个系统起始编号。
 - `correctionWorklist`：草稿验证错误按类型去重，关联源页、校对页、声部和小节索引。Skill 必须先按工作单尝试有依据的自动校正并重新验证，不能把第一版错误草稿直接当作任务终点。
 - 继续查看全部校对页：错误标签、文字重叠、重复速度、遗漏系统、页脚侵入。自动检查不具备可靠的文字框碰撞或完整音符语义验证。若视觉发现严重问题，即使脚本通过，也要明确报告内容不通过。
 - 不因谱号变化、谱表减少或页数变化本身断言错误，核对源谱是否允许。不要自动删除疑似歌词／版权文字或音符以通过检查；保留原始识别结果，需要时修正副本再验证。

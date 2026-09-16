@@ -308,6 +308,56 @@ def rest_spans(bars):
     return spans
 
 
+def score_xml_root(path):
+    """Read the root MSCX from an MSCZ/MSCX without trusting display output."""
+    path = Path(path)
+    if path.suffix.lower() == '.mscz':
+        with zipfile.ZipFile(path) as archive:
+            entries = [entry for entry in archive.infolist()
+                       if entry.filename.lower().endswith('.mscx') and '/' not in entry.filename]
+            if len(entries) != 1:
+                raise ValueError('MSCZ must contain exactly one top-level MSCX score.')
+            if entries[0].file_size > 50_000_000:
+                raise ValueError('Oversized MSCX score.')
+            data = archive.read(entries[0])
+    elif path.suffix.lower() == '.mscx':
+        data = path.read_bytes()
+    else:
+        raise ValueError('Numbering compensation scan requires an MSCZ or MSCX score.')
+    if len(data) > 50_000_000 or b'<!ENTITY' in data.upper():
+        raise ValueError('Oversized MSCX or entity declarations are not supported.')
+    root = ET.fromstring(data)
+    for element in root.iter():
+        element.tag = element.tag.split('}')[-1]
+    return root
+
+
+def inspect_numbering_compensation(path):
+    """Reject display-only numbering changes; zero noOffset is harmless."""
+    root = score_xml_root(path)
+    findings = []
+    for staff_position, staff in enumerate(root.findall('.//Staff'), 1):
+        staff_id = staff.get('id') or str(staff_position)
+        for node in staff.iter():
+            text = (node.text or '').strip()
+            if node.tag == 'noOffset':
+                try:
+                    nonzero = float(text) != 0
+                except ValueError:
+                    nonzero = True
+                if nonzero:
+                    findings.append({'staff': staff_id, 'mechanism': 'noOffset', 'value': text})
+            elif node.tag == 'MeasureNumber':
+                findings.append({'staff': staff_id, 'mechanism': 'MeasureNumber', 'value': text})
+            elif node.tag == 'measureNumberMode':
+                findings.append({'staff': staff_id, 'mechanism': 'measureNumberMode', 'value': text})
+    errors = [f"Staff {item['staff']}: numbering compensation {item['mechanism']}={item['value']!r} is forbidden; repair actual measures/rests/durations and remove the override."
+              for item in findings]
+    return {'status': 'numbering_compensation_detected' if findings else 'passed_no_compensation',
+            'errors': errors, 'compensations': findings,
+            'scope': 'All Staff elements in the final score.mscx were scanned for nonzero noOffset, manual MeasureNumber and measureNumberMode overrides.'}
+
+
 def music_details(path):
     if path.suffix.lower() == '.mxl':
         with zipfile.ZipFile(path) as z:
@@ -451,13 +501,29 @@ def compare_reference(details, baseline):
             'scope': baseline['scope']}
 
 
-def validate_content(xml, selection, proof=None, out=None, reference=None):
+def validate_content(xml, selection, proof=None, out=None, reference=None, score=None):
     data = music_details(xml)
     errors, warnings = check_music(data, selection['group'])
     reference_validation = None
     if reference is not None:
         reference_validation = compare_reference(data, reference)
         errors.extend(reference_validation['errors'])
+    compensation_validation = inspect_numbering_compensation(score) if score is not None else None
+    if compensation_validation:
+        errors.extend(compensation_validation['errors'])
+    if compensation_validation and compensation_validation['status'] == 'numbering_compensation_detected':
+        measure_validation = dict(compensation_validation)
+        if reference_validation:
+            measure_validation['referenceValidation'] = reference_validation
+            measure_validation['errors'] = compensation_validation['errors'] + reference_validation['errors']
+    elif reference_validation:
+        measure_validation = dict(reference_validation)
+        if compensation_validation:
+            measure_validation['compensationScan'] = compensation_validation
+    elif compensation_validation:
+        measure_validation = compensation_validation
+    else:
+        measure_validation = {'status': 'not_checked', 'errors': [], 'scope': 'No final MSCZ/MSCX or user-designated corrected reference MSCZ was supplied.'}
     penalty, components = quality_penalty(data, selection['group'], errors)
     components['referenceDifference'] = reference_validation['penalty'] if reference_validation else 0
     penalty += components['referenceDifference']
@@ -472,7 +538,7 @@ def validate_content(xml, selection, proof=None, out=None, reference=None):
     return {'schemaVersion': 3, 'status': 'failed_content_validation' if errors else 'passed_checked_structure',
             'errors': errors, 'warnings': warnings, 'musicXml': data, 'proofPages': pages,
             'qualityPenalty': penalty, 'qualityComponents': components,
-            'measureNumberValidation': reference_validation or {'status': 'not_checked', 'errors': [], 'scope': 'No user-designated corrected MSCZ reference was supplied.'},
+            'measureNumberValidation': measure_validation,
             'scope': 'Reviewed part/measure/clef/lyric/rest-span expectations, explicit empty bars and whole-measure rest durations, all-page blank/staff heuristics; not full rhythmic/musical accuracy or text-overlap validation.'}
 
 
@@ -481,7 +547,7 @@ def main():
     ap.add_argument('mode', choices=['prepare','check','reference'])
     ap.add_argument('--input'); ap.add_argument('--out', required=True)
     ap.add_argument('--plan'); ap.add_argument('--group')
-    ap.add_argument('--xml'); ap.add_argument('--selection'); ap.add_argument('--proof'); ap.add_argument('--reference'); ap.add_argument('--reference-score')
+    ap.add_argument('--xml'); ap.add_argument('--selection'); ap.add_argument('--proof'); ap.add_argument('--reference'); ap.add_argument('--reference-score'); ap.add_argument('--score')
     args = ap.parse_args()
     out = absolute(args.out)
     try:
@@ -495,7 +561,8 @@ def main():
         elif args.mode == 'check':
             selection = json.loads(absolute(args.selection).read_text(encoding='utf-8-sig'))
             reference = json.loads(absolute(args.reference).read_text(encoding='utf-8-sig')) if args.reference else None
-            result = validate_content(absolute(args.xml), selection, absolute(args.proof) if args.proof else None, out, reference)
+            result = validate_content(absolute(args.xml), selection, absolute(args.proof) if args.proof else None, out, reference,
+                                      absolute(args.score) if args.score else None)
             write_json(out / ('content-proof.json' if args.proof else 'content-musicxml.json'), result)
             code = 3 if result['errors'] else 0
         else:
@@ -511,3 +578,5 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
+

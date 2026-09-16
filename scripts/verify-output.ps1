@@ -64,7 +64,7 @@ try {
     # Validate the final saved score as well as the original recognition output.
     $savedContentDir = Join-Path $dir ('saved-content-' + [guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($savedContentDir)
-    $savedContentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$reopen,'--selection',$manifest.selection,'--out',$savedContentDir)
+    $savedContentArgs = @('-X','utf8',"$PSScriptRoot/score-structure.py",'check','--xml',$reopen,'--selection',$manifest.selection,'--score',$score,'--out',$savedContentDir)
     if ($manifest.PSObject.Properties['referenceBaseline'] -and $manifest.referenceBaseline) { $savedContentArgs += @('--reference',$manifest.referenceBaseline) }
     $savedContent = Invoke-ScoreProcess $python $savedContentArgs 60 $dir 'content-saved-score'
     if ($savedContent.stdout) { $result['savedContentValidation'] = $savedContent.stdout | ConvertFrom-Json }

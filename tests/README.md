@@ -2,7 +2,7 @@
 
 ## v2 回归
 
-`test-structure.py` 包含 15 项确定性规则测试：逐声部小节、错误谱号、允许的正常谱号变化、器乐误歌词、未知预期披露、重复页、错误哈希／未复核计划、5 个混合页组、空白图像、候选罚分、灰度 PDF 页数／不覆盖，以及 MSCZ 基准时间线一致和时值／休止／编号差异。
+`test-structure.py` 包含 19 项确定性规则测试：逐声部小节、错误谱号、允许的正常谱号变化、器乐误歌词、未知预期披露、重复页、错误哈希／未复核计划、5 个混合页组、空白图像、候选罚分、灰度 PDF 页数／不覆盖、MSCZ 基准时间线，以及零／非零 `noOffset`、手工 `MeasureNumber` 和 `measureNumberMode` 覆盖。
 
 `create-mixed-fixture.py <绝对目录>` 创建原创 28 小节四重奏和四个分谱 MusicXML。用 MuseScore 各自导出 PDF，再用 pypdf 按总谱 4 页＋四个分谱各 1 页合为 8 页。首次 `convert-score.ps1` 不带计划应退出 2，生成 5 组草案和全部缩略图，且不存在 `audiveris/`。逐页复核后，为测试场景编写已选择总谱／分谱的计划，分别实跑 OMR：总谱期望每声部 28 小节；分谱期望 1 声部、28 小节、正确谱号，均无歌词。保留未通过的真实 OMR 结果，它们是结构检查的负例，不得更改预期凑通过。
 
@@ -24,10 +24,10 @@
 
 ## 输出模式回归
 
-`run-selfcheck.py` 同时验证 `validated` 与 `draft`。删除最终小节或删除布局报告时，严格模式仍分别返回 3／5；草稿模式必须返回 0、`technicalValidation=passed`、`acceptancePassed=false` 和 `draft_with_validation_issues`，并保留具体错误。正常严格结果仍为 `passed`。
+`run-selfcheck.py` 同时验证 `validated` 与 `draft`。删除最终小节或删除布局报告时，严格模式仍分别返回 3／5；草稿模式必须返回 0、`technicalValidation=passed`、`acceptancePassed=false` 和 `draft_with_validation_issues`，并保留具体错误。向最终 MSCZ 注入非零 `noOffset` 时必须返回退出码 3 和 `numbering_compensation_detected`。正常严格结果仍为 `passed`。
 # Playback regression
 
-Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 63. MIDI note pitches/ticks must remain unchanged after instrument assignment. `run-selfcheck.py` has seven integration cases, including verification of a corrected MSCZ through `-ScorePath` with an automatically regenerated proof PDF.
+Brass: `run-brass-smoke.py --musescore <absolute MuseScore4.exe> --out <new absolute directory>` tests real import/resave/MIDI for trombone, baritone-horn, euphonium and a B-flat transposing part. The playback unit suite has 23 cases; the full unit total is 67. MIDI note pitches/ticks must remain unchanged after instrument assignment. `run-selfcheck.py` has eight integration cases, including hard rejection of numbering compensation and verification of a corrected MSCZ through `-ScorePath` with an automatically regenerated proof PDF.
 
 Layout: run `python tests/test-layout.py` to verify physical break removal, section/nobreak preservation, source mode, no overwrite and rejection of reintroduced breaks. Real MuseScore tests must resave both reflow and source modes, check `layoutValidation`, and inspect every proof page; fewer pages alone is not success.
 
@@ -42,4 +42,5 @@ Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet e
 `test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
 
 真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。
+
 

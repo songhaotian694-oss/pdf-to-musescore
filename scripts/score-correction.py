@@ -18,7 +18,9 @@ def unique(items):
 
 def issue_type(message):
     lower = message.lower()
-    if 'reference mscz' in lower or 'reference-system' in lower or 'measure numbers differ' in lower:
+    if ('reference mscz' in lower or 'reference-system' in lower or 'measure numbers differ' in lower
+            or 'numbering compensation' in lower or 'nooffset' in lower
+            or 'measurenumber' in lower or 'measurenumbermode' in lower):
         return 'reference_timeline'
     if any(word in lower for word in ['measure', 'rest', 'duration', 'pickup', 'backup', 'forward']):
         return 'rhythm_structure'
@@ -34,7 +36,7 @@ def issue_type(message):
 
 
 ACTIONS = {
-    'reference_timeline': 'Compare the named measure indices with the corrected MSCZ baseline; repair actual bars/durations/rests before numbering.',
+    'reference_timeline': 'Find the first drift, repair actual bars/durations/rest expansion, then remove every numbering offset or override; never compensate the displayed number.',
     'rhythm_structure': 'Compare the source PDF and proof at the named part/measure; correct bars, rests and durations in an editable copy.',
     'staff_structure': 'Compare staff grouping and clefs with the source PDF; correct the Audiveris OMR project first when possible.',
     'text_recognition': 'Compare text with the source PDF; remove only confirmed false OCR or restore confirmed lyrics.',

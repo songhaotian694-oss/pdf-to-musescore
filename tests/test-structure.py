@@ -4,11 +4,18 @@ import importlib.util
 import unittest
 from pathlib import Path
 import tempfile
+import zipfile
 
 spec=importlib.util.spec_from_file_location('structure',Path(__file__).resolve().parents[1]/'scripts/score-structure.py')
 s=importlib.util.module_from_spec(spec); spec.loader.exec_module(s)
 preprocess_spec=importlib.util.spec_from_file_location('preprocess',Path(__file__).resolve().parents[1]/'scripts/prepare-omr-input.py')
 preprocess=importlib.util.module_from_spec(preprocess_spec); preprocess_spec.loader.exec_module(preprocess)
+
+
+def make_mscz(path, staff_content):
+    xml=f'<museScore><Score><Staff id="1"><Measure>{staff_content}</Measure></Staff></Score></museScore>'
+    with zipfile.ZipFile(path,'w') as archive:
+        archive.writestr('score.mscx',xml)
 
 class Gates(unittest.TestCase):
     def setUp(self):
@@ -92,5 +99,25 @@ class Gates(unittest.TestCase):
         self.assertTrue(any('durations' in error for error in result['errors']))
         self.assertTrue(any('rest timeline' in error for error in result['errors']))
         self.assertTrue(any('numbers' in error for error in result['errors']))
+    def test_zero_number_offset_is_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            score=Path(directory)/'zero.mscz';make_mscz(score,'<noOffset>0</noOffset>')
+            self.assertEqual(s.inspect_numbering_compensation(score)['status'],'passed_no_compensation')
+    def test_nonzero_number_offset_is_forbidden(self):
+        with tempfile.TemporaryDirectory() as directory:
+            score=Path(directory)/'offset.mscz';make_mscz(score,'<noOffset>-2</noOffset>')
+            result=s.inspect_numbering_compensation(score)
+            self.assertEqual(result['status'],'numbering_compensation_detected')
+            self.assertEqual(result['compensations'][0]['mechanism'],'noOffset')
+    def test_manual_measure_number_is_forbidden(self):
+        with tempfile.TemporaryDirectory() as directory:
+            score=Path(directory)/'manual.mscz';make_mscz(score,'<MeasureNumber><text>24</text></MeasureNumber>')
+            self.assertEqual(s.inspect_numbering_compensation(score)['status'],'numbering_compensation_detected')
+    def test_measure_number_mode_override_is_forbidden(self):
+        with tempfile.TemporaryDirectory() as directory:
+            score=Path(directory)/'mode.mscz';make_mscz(score,'<measureNumberMode>0</measureNumberMode>')
+            self.assertEqual(s.inspect_numbering_compensation(score)['status'],'numbering_compensation_detected')
 
 if __name__=='__main__': unittest.main(verbosity=2)
+
+

@@ -25,10 +25,11 @@ class CorrectionTests(unittest.TestCase):
         self.assertEqual(issue['proofPages'][0]['thumbnail'],'proof-1.png')
 
     def test_reference_and_playback_are_separate_tasks(self):
-        verification={'savedContentValidation':{'errors':['Part 1 measure numbers differ from reference at indices [4].']},
+        verification={'savedContentValidation':{'errors':['Part 1 measure numbers differ from reference at indices [4].',
+                                                          "Staff 1: numbering compensation noOffset='1' is forbidden."]},
                       'playbackValidation':[{'errors':['MIDI program mismatch.']}]}
         kinds=[issue['type'] for issue in c.build(verification,self.selection)['issues']]
-        self.assertEqual(kinds,['reference_timeline','playback'])
+        self.assertEqual(kinds,['reference_timeline','reference_timeline','playback'])
 
     def test_per_part_summary_is_not_mistaken_for_part_name(self):
         issue=c.build({'errors':['Per-part measure counts [7] differ from reviewed source [8].']},self.selection)['issues'][0]

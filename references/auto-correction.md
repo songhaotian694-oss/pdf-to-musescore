@@ -9,6 +9,8 @@
 5. 每轮重新导出校对 PDF、MusicXML 和 MIDI，运行内容、基准、播放与布局验证。只保留错误减少且没有新增门禁错误的副本。
 6. 两轮后仍有歧义时停止自动修改，交付问题较少的可编辑草稿和剩余工作单；不向用户声称已经修好。
 
+禁止用小节编号偏移修复 OMR 错误。发现编号漂移时定位第一个漂移点，比较其前后实际小节、时值、隐藏空小节和多小节休止展开，只修复实体结构。非零 `noOffset`、手工 `MeasureNumber` 或 `measureNumberMode` 覆盖必须删除；无法唯一判断时保留为待人工校对草稿。
+
 可以自动完成且风险较低的项目包括：选择更好的 OMR 候选、明确的播放音色、已配置的布局断点、与已校正 MSCZ 完全匹配前提下的编号复核。不能从 PDF 唯一确定的缺失发声音符、复调归属、跨页连线和模糊临时记号必须保留为人工项。
 
 `correction-worklist.json` 将验证错误去重并分类为 `reference_timeline`、`rhythm_structure`、`staff_structure`、`text_recognition`、`playback`、`layout` 或 `notation`，附带源页、校对页、声部和可解析的小节索引。
