@@ -2,6 +2,8 @@
 
 将清晰印刷五线谱 PDF 转成可编辑 MuseScore 工程的本地 Skill。使用 Audiveris 识谱、MuseScore Studio 导入和导出；包含页组核对、结构检查、播放音色设置、换行分页处理和回归测试。
 
+> **第一次使用：** 请先阅读 [《PDF 乐谱转 MuseScore：零基础使用说明书》](新手从零开始使用指南.md)。内容包括 MuseScore、Audiveris、Python 和 Poppler 的安装，从 GitHub 安装本 Skill、首次转换、MuseScore 校对与常见问题。
+
 ## 环境与安装
 
 当前面向 Windows PowerShell 和 Python 3。本地验证使用 Audiveris 5.11.0、MuseScore Studio 4.7.3；其他版本需重新验证。应用程序、OCR 语言模型和音色库不随仓库分发，请分别安装。
