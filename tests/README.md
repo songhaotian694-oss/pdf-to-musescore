@@ -20,6 +20,8 @@
 
 另执行 skill-creator 的 `quick_validate.py` 和 PowerShell 语法检查。安装后需要在下一次对话确认 `$pdf-to-musescore` 出现在可用技能中；元数据校验不能替代真正的新回合发现测试。
 
+`python tests/test-cleanup.py` 包含 3 项清理测试：只删除已知中间目录／文件并保留交付物和未知用户文件；只删除运行目录内部的选页 PDF，不触碰外部原件；缺少 `run.json` 时拒绝执行清理。完整转换只有在成功且无需继续校正时默认清理，失败、等待选页和待修正草稿保留诊断材料。
+
 `test-correction.py` 包含 4 项工作单测试：无错误时不启动校正；小节／休止错误关联声部、小节、源页和校对页；基准时间线与播放错误保持为两个独立任务；汇总文字不会误识别为声部名称。工作单只组织证据，不能把模糊 PDF 自动转换成确定音符。
 
 ## 输出模式回归
@@ -42,5 +44,4 @@ Real MuseScore acceptance must import, assign, resave and export MIDI. Quartet e
 `test-playback.py` 另覆盖整段休止的中间声部、钢琴单手休止、全休止谱、缺失发声轨道和缺失谱表不能当成休止。
 
 真实 MuseScore 验收应使用原创 8 小节和 26 小节休止夹具，以及中间声部全休止／全谱休止夹具；导入、设置音色、重新保存，再导出 MusicXML 和 MIDI。检查休止区间、首次 Note On 位置及无音符声部的报告，不用程序号正确替代时间轴检查。用户提供的问题乐谱仅在本地诊断，不纳入仓库。
-
 

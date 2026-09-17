@@ -4,7 +4,7 @@ param(
     [string]$OutputDirectory,
     [switch]$ExportMidi,
     [switch]$OpenInMuseScore,
-    [bool]$KeepIntermediate = $true,
+    [bool]$KeepIntermediate = $false,
     [switch]$Force,
     [string]$AudiverisPath,
     [string]$MuseScorePath,
@@ -21,10 +21,9 @@ param(
 )
 . "$PSScriptRoot/common.ps1"
 $dir = $null
-$report = [ordered]@{schemaVersion=6; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); referenceMscz=$null; referenceBaseline=$null; measureNumberValidation=$null; correctionWorklist=$null; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null}
+$report = [ordered]@{schemaVersion=6; status='failed'; outputMode=$OutputMode; recognitionProfile=$RecognitionProfile; selectedRecognitionProfile=$null; recognitionAttempts=@(); referenceMscz=$null; referenceBaseline=$null; measureNumberValidation=$null; correctionWorklist=$null; acceptancePassed=$false; draftUsable=$false; inputPdf=$InputPdf; outputDirectory=$null; startedUtc=[datetime]::UtcNow.ToString('o'); finishedUtc=$null; error=''; warnings=@(Get-CorrectionWarnings); candidates=@(); dependencies=@{}; preflight=$null; selection=$null; contentValidation=$null; playbackAssignment=$null; layoutAssignment=$null; verification=$null; cleanup=[ordered]@{requested=(-not $KeepIntermediate); performed=$false; reason='pending'; removed=@(); retained=@()}}
 try {
     $InputPdf = Assert-AbsolutePath $InputPdf
-    if (-not $KeepIntermediate) { throw 'Intermediate files are required for correction; keep -KeepIntermediate true.' }
     $parent = if ($OutputDirectory) { Assert-AbsolutePath $OutputDirectory } else { Split-Path $InputPdf -Parent }
     [void][IO.Directory]::CreateDirectory($parent)
     $name = [IO.Path]::GetFileNameWithoutExtension($InputPdf) + '-musescore-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
@@ -147,7 +146,9 @@ try {
         } else { $report.warnings += 'Automatic grayscale fallback could not be prepared; original diagnostics were retained.' }
     }
     if (-not $chosen) { throw 'Audiveris produced no parseable single MusicXML candidate in either recognition attempt. Inspect retained OMR and logs.' }
-    $xml = $chosen.xmls[0].FullName
+    $chosenXml = $chosen.xmls[0].FullName
+    $xml = Join-Path $dir $(if ([IO.Path]::GetExtension($chosenXml) -ieq '.mxl') { 'score.mxl' } else { 'score.musicxml' })
+    Copy-Item -LiteralPath $chosenXml -Destination $xml -ErrorAction Stop
     $content = $chosen.contentProcess
     $report.contentValidation = $chosen.content
     $report.selectedRecognitionProfile = $chosen.attempt.profile
@@ -230,6 +231,22 @@ try {
     }
     if ($OpenInMuseScore) { Start-Process -FilePath $m -ArgumentList ('"' + $score + '"') | Out-Null }
 } catch { $report.error = $_.Exception.Message }
+$cleanupReady = $report.status -in @('completed_needs_manual_review','editable_draft_ready_for_review')
+if ($dir -and -not $KeepIntermediate) {
+    if ($cleanupReady) {
+        try {
+            $cleanupJson = & "$PSScriptRoot/cleanup-run.ps1" -RunDirectory $dir
+            $report.cleanup = $cleanupJson | ConvertFrom-Json
+        } catch {
+            $report.cleanup.reason = 'cleanup_failed'
+            $report.warnings += "Intermediate cleanup failed: $($_.Exception.Message)"
+        }
+    } else {
+        $report.cleanup.reason = 'retained_for_selection_failure_or_correction'
+    }
+} elseif ($KeepIntermediate) {
+    $report.cleanup.reason = 'keep_intermediate_requested'
+}
 $report.finishedUtc = [datetime]::UtcNow.ToString('o')
 if ($dir) { Write-ScoreReport $report $dir }
 $report | ConvertTo-Json -Depth 12
@@ -238,5 +255,3 @@ if ($report.status -eq 'failed_content_validation') { exit 3 }
 if ($report.status -eq 'failed_playback_validation') { exit 4 }
 if ($report.status -eq 'failed_layout_validation') { exit 5 }
 if ($report.status -notin @('completed_needs_manual_review','editable_draft_ready_for_review','editable_draft_needs_correction')) { exit 1 }
-
-

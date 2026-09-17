@@ -26,7 +26,7 @@ description: Convert printed sheet-music PDFs into editable MuseScore scores usi
 
 `-ExportMidi` 可选；`-OpenInMuseScore` 仅在用户要求打开时使用。选择全部时逐组调用，建议输出父目录按组名区分。
 
-脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。自动识别回退保留原始和灰度两次 OMR、MXL、日志与罚分，不能把候选选择描述为音符准确率测量。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。默认保留原 PDF、OMR、MXL、日志和报告，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
+脚本拆出选定页组，再执行 Audiveris → MXL → MSCZ → 校对 PDF。自动识别回退会在处理期间保留原始和灰度两次 OMR、MXL、日志与罚分，不能把候选选择描述为音符准确率测量。`selection.json` 和 `run.json` 保留原 PDF 哈希、页码与分组。转换成功且无需继续自动校正时，默认清除缩略图、临时 PDF、Audiveris 工程／缓存、验证副本、过程 MSCZ 和 stdout／stderr 日志；保留最终 MSCZ、校对 PDF、可选 MIDI、选中的 MusicXML/MXL、报告、选择计划与校正工作单。失败、`needs_selection` 或 `editable_draft_needs_correction` 必须保留中间文件用于诊断和修正；显式传入 `-KeepIntermediate $true` 也保留全部中间文件。每次仍创建新目录，不覆盖，`-Force` 不绕过分组或验证。路径全部绝对化，以参数数组传递。
 
 CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](references/musescore-cli.md)、[排查指南](references/troubleshooting.md)。多个 MXL 仍返回 `needs_selection`，列出全部候选，不默默取第一个。
 
@@ -64,5 +64,4 @@ CLI 与恢复说明见 [Audiveris](references/audiveris-cli.md)、[MuseScore](re
 - 草稿模式报告 `editable_draft_needs_correction` 或 `editable_draft_ready_for_review`，保留所有检查错误且 `acceptancePassed=false`；它可以作为校正起点，不能称作成品。严格模式只有技术、已配置结构、播放音色和布局检查全部通过，才报告 `completed_needs_manual_review`。披露未知预期和未检查项目，并按 [人工清单](references/correction-checklist.md) 校对节拍、附点、临时记号、连线、歌词与多声部，并试听。
 
 交付各组的 `score.mscz`、`score-proof.pdf`、可选 MIDI、MusicXML 和报告，注明对应源页。测试见 [tests/README.md](tests/README.md)。卸载只删除安装的 Skill 目录，不删除乐谱，也不卸载 Audiveris 或 MuseScore。
-
 
